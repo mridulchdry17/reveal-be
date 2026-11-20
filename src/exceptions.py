@@ -28,6 +28,11 @@ class Conflict(DomainError):
     code = "conflict"
 
 
+class RateLimited(DomainError):
+    status_code = 429
+    code = "rate_limited"
+
+
 async def domain_error_handler(_: Request, exc: Exception) -> JSONResponse:
     if not isinstance(exc, DomainError):
         raise exc

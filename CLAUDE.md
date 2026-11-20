@@ -28,8 +28,15 @@ Planned, add with the feature that first needs it (not before): Redis + Arq for 
 
 ```
 src/
-  main.py  config.py  database.py  exceptions.py  models.py (Base + naming convention)
-  health/              the reference domain: copy its shape for new ones
+  main.py              app factory; product routers mounted under /v1
+  config.py  database.py
+  models.py            Base, naming convention, UUIDPrimaryKeyMixin, TimestampMixin
+  exceptions.py        DomainError family + the one HTTP handler
+  schemas.py           ErrorResponse (shape of every error)
+  security.py          require_admin, RateLimiter / limit_by_ip
+  enrollment.py        normalize() / is_valid(): the only enrollment-number rules
+  health/              smallest example of the layers
+  waitlist/            first product domain: copy its shape for new ones
   <domain>/            planned: auth, verification, profiles, drops, matches,
                        chats, swaps, guess, safety, notifications, moderation
     router.py          HTTP only: parse, call service, return schema
@@ -83,7 +90,11 @@ These are the reason the product exists. Every one needs a test, and a change th
 - DB: singular snake_case tables, `_at` for timestamps (UTC, tz-aware), `_id` FKs, explicit `MetaData(naming_convention=...)`. Do joins and filtering in SQL, not Python loops.
 - Migrations are reviewed, reversible, never edited after merge. No data backfills inside schema migrations.
 - Anything that must survive a crash or retry (drop generation, push, image processing) is an Arq job, not `BackgroundTasks`.
-- Every route sets `response_model` and `status_code`. API docs are off outside `local` and `staging`.
+- Every route sets `response_model` and `status_code`, and lists its error responses with `ErrorResponse`. API docs are off outside `local` and `staging`.
+- Product routes live under `/v1`. A breaking change ships as a new version next to the old one, because installed PWAs keep old code cached.
+- Tables use `UUIDPrimaryKeyMixin` + `TimestampMixin`. Never expose sequential ids.
+- Never reveal whether someone else's data exists. If submitted details clash with another person's entry, answer exactly like a success and save nothing (see `waitlist.service.join`). On a dating app, "is she on it?" must be unanswerable.
+- Admin-only routes use `Depends(require_admin)` and `include_in_schema=False`, so they never reach the frontend's generated types.
 - Never log PII: no names, enrollment numbers, phone numbers, message text or image URLs. Log user ids.
 - Config only via `src/config.py` settings. No `os.environ` reads elsewhere. No secrets in the repo; `.env.example` lists keys only.
 
@@ -99,7 +110,8 @@ These are the reason the product exists. Every one needs a test, and a change th
 
 ## Gotchas
 
-- Tests run against a real Postgres (`docker compose up -d db`), not SQLite; JSONB and timezone behaviour differ.
+- Tests run against a real Postgres (`docker compose up -d db`), not SQLite; JSONB and timezone behaviour differ. They use a separate `reveal_test` database, created and migrated automatically by `tests/conftest.py`; tables are truncated after each test.
+- `RateLimiter` is in-memory, so it's only correct with one API process. Move it to Redis before adding workers or servers.
 - Reveal's Postgres is on port **5433**, not 5432: this machine already runs another Postgres on 5432. An error like `role "reveal" does not exist` means you hit the wrong one.
 - New domain models must be imported in `migrations/env.py` or autogenerate won't see them.
 - Override dependencies in tests with `app.dependency_overrides`, not monkeypatching.
