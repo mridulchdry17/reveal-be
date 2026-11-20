@@ -6,11 +6,9 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import src.waitlist.models  # noqa: F401  (each domain's models must be imported here)
 from src.config import settings
 from src.models import Base
-
-# Import each domain's models module here so autogenerate sees its tables, e.g.:
-# import src.profiles.models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
