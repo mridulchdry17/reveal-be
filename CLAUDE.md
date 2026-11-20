@@ -93,7 +93,7 @@ These are the reason the product exists. Every one needs a test, and a change th
 - Every route sets `response_model` and `status_code`, and lists its error responses with `ErrorResponse`. API docs are off outside `local` and `staging`.
 - Product routes live under `/v1`. A breaking change ships as a new version next to the old one, because installed PWAs keep old code cached.
 - Tables use `UUIDPrimaryKeyMixin` + `TimestampMixin`. Never expose sequential ids.
-- Never reveal whether someone else's data exists: a conflict on another person's enrollment number or email gets the same generic error either way (see `waitlist.service.join`).
+- Never reveal whether someone else's data exists. If submitted details clash with another person's entry, answer exactly like a success and save nothing (see `waitlist.service.join`). On a dating app, "is she on it?" must be unanswerable.
 - Admin-only routes use `Depends(require_admin)` and `include_in_schema=False`, so they never reach the frontend's generated types.
 - Never log PII: no names, enrollment numbers, phone numbers, message text or image URLs. Log user ids.
 - Config only via `src/config.py` settings. No `os.environ` reads elsewhere. No secrets in the repo; `.env.example` lists keys only.

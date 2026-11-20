@@ -1,10 +1,20 @@
-from httpx import AsyncClient
+from typing import Any
+
+from httpx import AsyncClient, Response
+
+from tests.conftest import ADMIN_HEADERS
 
 URL = "/v1/waitlist"
 
 
-async def join(client: AsyncClient, enrollment: str, email: str):
-    return await client.post(URL, json={"enrollment_number": enrollment, "email": email})
+async def join(client: AsyncClient, enrollment: str, email: str, **extra: Any) -> Response:
+    body = {"enrollment_number": enrollment, "email": email, "confirmed_adult": True, **extra}
+    return await client.post(URL, json=body)
+
+
+async def export_rows(client: AsyncClient) -> list[str]:
+    response = await client.get(f"{URL}/export", headers=ADMIN_HEADERS)
+    return response.text.strip().splitlines()[1:]
 
 
 async def test_first_person_is_first_in_line(client: AsyncClient) -> None:
@@ -31,31 +41,44 @@ async def test_joining_again_with_same_details_returns_existing_place(client: As
     assert response.json() == {"position": 1, "already_joined": True}
 
 
-async def test_enrollment_taken_by_someone_else_is_refused(client: AsyncClient) -> None:
+async def test_someone_elses_enrollment_looks_like_a_normal_join(client: AsyncClient) -> None:
     await join(client, "22EC1047", "aanya@gmail.com")
 
-    response = await join(client, "22EC1047", "someone-else@gmail.com")
+    taken = await join(client, "22EC1047", "prankster@gmail.com")
+    fresh = await join(client, "21CS0417", "arjun@gmail.com")
 
-    assert response.status_code == 409
-    assert response.json()["code"] == "already_registered"
+    # Same status and shape as a genuine new join, so nobody can learn who signed up.
+    assert taken.status_code == fresh.status_code == 201
+    assert taken.json() == {"position": 2, "already_joined": False}
+    assert fresh.json() == {"position": 2, "already_joined": False}
 
 
-async def test_email_taken_by_someone_else_is_refused(client: AsyncClient) -> None:
+async def test_someone_elses_entry_is_not_overwritten(client: AsyncClient) -> None:
     await join(client, "22EC1047", "aanya@gmail.com")
 
-    response = await join(client, "21CS0417", "aanya@gmail.com")
+    await join(client, "22EC1047", "prankster@gmail.com")
+    await join(client, "30ME0001", "aanya@gmail.com")
 
-    assert response.status_code == 409
-    assert response.json()["code"] == "already_registered"
+    rows = await export_rows(client)
+    assert len(rows) == 1
+    assert rows[0].startswith("22EC1047,aanya@gmail.com,")
 
 
-async def test_refusal_does_not_say_which_detail_matched(client: AsyncClient) -> None:
-    await join(client, "22EC1047", "aanya@gmail.com")
+async def test_source_is_saved_and_bad_values_are_dropped(client: AsyncClient) -> None:
+    await join(client, "22EC1047", "aanya@gmail.com", source="WA")
+    response = await join(client, "21CS0417", "arjun@gmail.com", source="<script>")
 
-    by_enrollment = await join(client, "22EC1047", "x@gmail.com")
-    by_email = await join(client, "21CS0417", "aanya@gmail.com")
+    assert response.status_code == 201
+    rows = await export_rows(client)
+    assert rows[0].startswith("22EC1047,aanya@gmail.com,wa,")
+    assert rows[1].startswith("21CS0417,arjun@gmail.com,,")
 
-    assert by_enrollment.json() == by_email.json()
+
+async def test_must_confirm_18_or_older(client: AsyncClient) -> None:
+    response = await join(client, "22EC1047", "aanya@gmail.com", confirmed_adult=False)
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "confirmed_adult"]
 
 
 async def test_invalid_enrollment_number_is_rejected(client: AsyncClient) -> None:

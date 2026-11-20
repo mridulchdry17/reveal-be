@@ -2,7 +2,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.waitlist import repository
-from src.waitlist.exceptions import AlreadyRegistered
 from src.waitlist.models import WaitlistEntry
 from src.waitlist.schemas import WaitlistExportRow, WaitlistJoinRequest, WaitlistJoinResponse
 
@@ -10,31 +9,36 @@ from src.waitlist.schemas import WaitlistExportRow, WaitlistJoinRequest, Waitlis
 async def join(session: AsyncSession, request: WaitlistJoinRequest) -> WaitlistJoinResponse:
     """Add someone to the waitlist.
 
-    Joining again with the same enrollment number AND email returns the existing place.
-    If only one of the two is already taken, that's someone else's entry: refuse without
-    saying which one, so the form can't be used to look people up.
+    - Same enrollment number AND email again: return the existing place.
+    - Only one of the two is already taken: that's someone else's entry. Answer exactly
+      like a fresh join and save nothing, so the form can never confirm that a given
+      student is on the list. The real owner can reach us to sort it out.
     """
-    existing = await _existing_place(session, request)
-    if existing is not None:
-        return existing
+    outcome = await _check_existing(session, request)
+    if outcome is not None:
+        return outcome
 
-    entry = WaitlistEntry(enrollment_number=request.enrollment_number, email=request.email)
+    entry = WaitlistEntry(
+        enrollment_number=request.enrollment_number,
+        email=request.email,
+        source=request.source,
+    )
     try:
         await repository.add(session, entry)
         await session.commit()
     except IntegrityError:
-        # Someone submitted the same details at the same moment.
+        # Someone submitted overlapping details at the same moment.
         await session.rollback()
-        existing = await _existing_place(session, request)
-        if existing is None:
+        outcome = await _check_existing(session, request)
+        if outcome is None:
             raise
-        return existing
+        return outcome
 
     position = await repository.position_of(session, entry.id)
     return WaitlistJoinResponse(position=position, already_joined=False)
 
 
-async def _existing_place(
+async def _check_existing(
     session: AsyncSession, request: WaitlistJoinRequest
 ) -> WaitlistJoinResponse | None:
     matches = await repository.find_matching(session, request.enrollment_number, request.email)
@@ -44,9 +48,12 @@ async def _existing_place(
         if entry.enrollment_number == request.enrollment_number and entry.email == request.email:
             position = await repository.position_of(session, entry.id)
             return WaitlistJoinResponse(position=position, already_joined=True)
-    raise AlreadyRegistered(
-        "This enrollment number or email is already on the list with different details."
-    )
+    return await _looks_like_a_new_join(session)
+
+
+async def _looks_like_a_new_join(session: AsyncSession) -> WaitlistJoinResponse:
+    position = await repository.count_all(session) + 1
+    return WaitlistJoinResponse(position=position, already_joined=False)
 
 
 async def export(session: AsyncSession) -> list[WaitlistExportRow]:
@@ -55,6 +62,7 @@ async def export(session: AsyncSession) -> list[WaitlistExportRow]:
         WaitlistExportRow(
             enrollment_number=entry.enrollment_number,
             email=entry.email,
+            source=entry.source,
             joined_at=entry.created_at,
         )
         for entry in entries

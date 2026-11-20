@@ -36,6 +36,11 @@ async def position_of(session: AsyncSession, entry_id: uuid.UUID) -> int:
     return count or 0
 
 
+async def count_all(session: AsyncSession) -> int:
+    count = await session.scalar(select(func.count()).select_from(WaitlistEntry))
+    return count or 0
+
+
 async def list_all(session: AsyncSession) -> list[WaitlistEntry]:
     result = await session.scalars(select(WaitlistEntry).order_by(WaitlistEntry.created_at))
     return list(result)

@@ -11,3 +11,5 @@ class WaitlistEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     enrollment_number: Mapped[str] = mapped_column(String(32), unique=True)
     # Stored lowercased.
     email: Mapped[str] = mapped_column(String(320), unique=True)
+    # Where they came from ('wa', 'ig', ...), for seeing which channel works.
+    source: Mapped[str | None] = mapped_column(String(20))

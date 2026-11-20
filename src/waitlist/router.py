@@ -23,7 +23,6 @@ router = APIRouter(prefix="/waitlist", tags=["waitlist"])
     dependencies=[Depends(limit_joins)],
     responses={
         200: {"model": WaitlistJoinResponse, "description": "Already on the list"},
-        409: {"model": ErrorResponse, "description": "Details belong to another entry"},
         429: {"model": ErrorResponse, "description": "Too many attempts"},
     },
 )
@@ -48,9 +47,11 @@ async def export_waitlist(session: Annotated[AsyncSession, Depends(get_session)]
     rows = await service.export(session)
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(["enrollment_number", "email", "joined_at"])
+    writer.writerow(["enrollment_number", "email", "source", "joined_at"])
     for row in rows:
-        writer.writerow([row.enrollment_number, row.email, row.joined_at.isoformat()])
+        writer.writerow(
+            [row.enrollment_number, row.email, row.source or "", row.joined_at.isoformat()]
+        )
     return Response(
         content=buffer.getvalue(),
         media_type="text/csv",
