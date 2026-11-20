@@ -116,3 +116,5 @@ These are the reason the product exists. Every one needs a test, and a change th
 - New domain models must be imported in `migrations/env.py` or autogenerate won't see them.
 - Override dependencies in tests with `app.dependency_overrides`, not monkeypatching.
 - The drop runs at 21:00 IST (`Asia/Kolkata`); store UTC, convert only at the schedule boundary.
+- The hosted database is **Azure Database for PostgreSQL** `reveal-db-eastasia` (East Asia, Burstable B1ms, free tier) in resource group `reveal`. Its URL lives only in `reveal-be/.env` (git-ignored), with `?ssl=require`. The Azure for Students subscription may deploy only in centralindia, eastasia, austriaeast, malaysiawest and koreacentral; B1ms failed with `SkuNotAvailable` in centralindia and koreacentral (Nov 2026). `scripts/try_azure_postgres.sh` recreates it if ever needed.
+- With `.env` pointing at Azure, `uv run alembic upgrade head` and `fastapi dev` hit the **hosted** database. Tests are unaffected: `tests/conftest.py` forces the local `reveal_test` database.
