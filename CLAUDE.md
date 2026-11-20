@@ -13,22 +13,25 @@ uv run ruff check --fix . && uv run ruff format .     # lint + format
 uv run pyright                           # type check
 uv run alembic revision --autogenerate -m "add_swap_table"   # new migration
 uv run alembic upgrade head              # apply migrations
-docker compose up -d db redis            # local Postgres + Redis
+docker compose up -d db                  # local Postgres on port 5433
 ```
 
 A change is done when `ruff`, `pyright` and `pytest` all pass. Show the command output, not a summary of it.
 
 ## Stack (decided, don't swap without asking)
 
-Python 3.12, uv, FastAPI, Pydantic v2 + pydantic-settings, SQLAlchemy 2.0 async (`AsyncSession`) + asyncpg, PostgreSQL, Alembic, Redis + Arq for jobs (nightly drop, push fan-out), pywebpush (VAPID) for notifications, S3-compatible private bucket for photos and voice notes, pytest + `httpx.AsyncClient(transport=ASGITransport(app))`, Ruff, Pyright.
+Installed: Python 3.12, uv, FastAPI, Pydantic v2 + pydantic-settings, SQLAlchemy 2 async (`AsyncSession`) + asyncpg, PostgreSQL 17, Alembic, pytest + pytest-asyncio + `httpx.AsyncClient(transport=ASGITransport(app))`, Ruff, Pyright.
+
+Planned, add with the feature that first needs it (not before): Redis + Arq for jobs (nightly drop, push fan-out), pywebpush (VAPID) for notifications, S3-compatible private bucket for photos and voice notes.
 
 ## Layout: by domain, not by file type
 
 ```
 src/
   main.py  config.py  database.py  exceptions.py  models.py (Base + naming convention)
-  <domain>/            auth, verification, profiles, drops, matches, chats,
-                       swaps, guess, safety, notifications, moderation
+  health/              the reference domain: copy its shape for new ones
+  <domain>/            planned: auth, verification, profiles, drops, matches,
+                       chats, swaps, guess, safety, notifications, moderation
     router.py          HTTP only: parse, call service, return schema
     schemas.py         Pydantic request/response models
     models.py          SQLAlchemy tables
@@ -97,5 +100,7 @@ These are the reason the product exists. Every one needs a test, and a change th
 ## Gotchas
 
 - Tests run against a real Postgres (`docker compose up -d db`), not SQLite; JSONB and timezone behaviour differ.
+- Reveal's Postgres is on port **5433**, not 5432: this machine already runs another Postgres on 5432. An error like `role "reveal" does not exist` means you hit the wrong one.
+- New domain models must be imported in `migrations/env.py` or autogenerate won't see them.
 - Override dependencies in tests with `app.dependency_overrides`, not monkeypatching.
 - The drop runs at 21:00 IST (`Asia/Kolkata`); store UTC, convert only at the schedule boundary.
