@@ -2,5 +2,14 @@
 # Swap the hostname for your own domain (e.g. api.reveal.in) once DNS points at the VM.
 reveal-api.koreacentral.cloudapp.azure.com {
 	encode gzip
-	reverse_proxy 127.0.0.1:8001
+
+	# Staging (pre-release branch, database reveal_staging).
+	handle_path /staging/* {
+		reverse_proxy 127.0.0.1:8002
+	}
+
+	# Production (main branch, database reveal).
+	handle {
+		reverse_proxy 127.0.0.1:8001
+	}
 }

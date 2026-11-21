@@ -1,12 +1,12 @@
 name: CI
 
-# Tests only. Deploys are manual for now: after merging, run deploy/deploy.sh on the VM
-# (see README "Production").
+# Tests only. Deploys are manual for now: run deploy/deploy.sh on the VM
+# (see README "Environments").
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, pre-release]
   workflow_dispatch:
 
 jobs:

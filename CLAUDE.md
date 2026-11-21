@@ -100,6 +100,8 @@ These are the reason the product exists. Every one needs a test, and a change th
 
 ## How to work here
 
+- **Branches:** `pre-release` is the default branch. Feature branches open PRs into `pre-release`; deploy staging and test there. Release = a PR from `pre-release` into `main`, then deploy production. Never commit or merge straight to `main`. Merge PRs with merge commits, never squash.
+
 - Before changing more than one file, state the plan: files, what changes, how it will be tested. Wait if the change touches a product rule above or a migration.
 - Write the failing test first for any bug or product rule, then make it pass.
 - Small diffs. Keep a refactor and a behaviour change in separate commits.
@@ -118,4 +120,4 @@ These are the reason the product exists. Every one needs a test, and a change th
 - The drop runs at 21:00 IST (`Asia/Kolkata`); store UTC, convert only at the schedule boundary.
 - The hosted database is **Azure Database for PostgreSQL** `reveal-db-eastasia` (East Asia, Burstable B1ms, free tier) in resource group `reveal`. Its URL lives only in `reveal-be/.env` (git-ignored), with `?ssl=require`. The Azure for Students subscription may deploy only in centralindia, eastasia, austriaeast, malaysiawest and koreacentral; B1ms failed with `SkuNotAvailable` in centralindia and koreacentral (Nov 2026). `scripts/try_azure_postgres.sh` recreates it if ever needed.
 - With `.env` pointing at Azure, `uv run alembic upgrade head` and `fastapi dev` hit the **hosted** database. Tests are unaffected: `tests/conftest.py` forces the local `reveal_test` database.
-- Production runs on the Azure VM (`azureuser@40.82.143.50`, key `~/.ssh/id_ed25519_reveal_vm`) as systemd `reveal-api` on 127.0.0.1:8001 behind Caddy at `reveal-api.koreacentral.cloudapp.azure.com`. Deploys are manual for now: run `deploy/deploy.sh` on the VM after merging. The VM has <1 GB RAM: keep one uvicorn worker and don't add services casually. Never print or commit the VM's `.env`.
+- Production runs on the Azure VM (`azureuser@40.82.143.50`, key `~/.ssh/id_ed25519_reveal_vm`) as systemd `reveal-api` on 127.0.0.1:8001 behind Caddy at `reveal-api.koreacentral.cloudapp.azure.com`. Staging runs beside it as `reveal-api-staging` on :8002 (checkout `~/reveal-be-staging`, branch `pre-release`, database `reveal_staging`), served at `/staging`. Deploys are manual: `deploy/deploy.sh staging|production` on the VM (see README "Environments"). The VM has <1 GB RAM: keep one uvicorn worker per environment and don't add services casually. Never print or commit the VM's `.env` files.
