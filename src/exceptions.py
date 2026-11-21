@@ -13,6 +13,11 @@ class DomainError(Exception):
         super().__init__(self.detail)
 
 
+class Unauthenticated(DomainError):
+    status_code = 401
+    code = "unauthenticated"
+
+
 class NotFound(DomainError):
     status_code = 404
     code = "not_found"

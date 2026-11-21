@@ -37,7 +37,8 @@ src/
   enrollment.py        normalize() / is_valid(): the only enrollment-number rules
   health/              smallest example of the layers
   waitlist/            first product domain: copy its shape for new ones
-  <domain>/            planned: auth, verification, profiles, drops, matches,
+  auth/                Google sign-in, bearer sessions (hashed), current_user / admin_user
+  <domain>/            planned: verification, profiles, drops, matches,
                        chats, swaps, guess, safety, notifications, moderation
     router.py          HTTP only: parse, call service, return schema
     schemas.py         Pydantic request/response models
@@ -78,7 +79,7 @@ These are the reason the product exists. Every one needs a test, and a change th
 4. **Photo pieces:** 9 per photo. Each card swap opens 2, each correct guess opens 1, the photo swap opens all. Pieces are cut and watermarked per viewer on the server; the full image never leaves the server before the photo swap.
 5. **Step away / unmatch / block revokes everything** revealed between the pair, for both, immediately.
 6. **Audience filters apply both ways:** first-years see and are seen only by first-years (unless they opt out); hide list and blocks are symmetric and silent.
-7. **Rank-list fields are read-only to users** (official name, branch, year, enrollment number).
+7. **Verified fields are read-only to users** (official name, branch, year, enrollment number). They're set when a student is verified (college Google account, ID card review, or an admin letting them in) and only admins can change them. One account per enrollment number and per college email.
 8. **Selfie and ID images are deleted when review ends**, approve or reject. Store only the outcome.
 9. **"Women write first"** when enabled: the other side can't send until she has.
 
@@ -94,7 +95,8 @@ These are the reason the product exists. Every one needs a test, and a change th
 - Product routes live under `/v1`. A breaking change ships as a new version next to the old one, because installed PWAs keep old code cached.
 - Tables use `UUIDPrimaryKeyMixin` + `TimestampMixin`. Never expose sequential ids.
 - Never reveal whether someone else's data exists. If submitted details clash with another person's entry, answer exactly like a success and save nothing (see `waitlist.service.join`). On a dating app, "is she on it?" must be unanswerable.
-- Admin-only routes use `Depends(require_admin)` and `include_in_schema=False`, so they never reach the frontend's generated types.
+- Signed-in routes use `Depends(current_user)`; admin screens use `Depends(admin_user)` (admins = `ADMIN_EMAILS`). The older `require_admin` (`X-Admin-Token`) is only for scripts like the waitlist CSV export; those routes use `include_in_schema=False`, so they never reach the frontend's generated types.
+- Sign-in: the frontend sends Google's ID token to `POST /v1/auth/google`; we verify it with `google-auth` and return an opaque session token (stored only as SHA-256). Any Google account can sign in; being a verified student is a separate step. Tests override `get_google_verifier`, never call Google.
 - Never log PII: no names, enrollment numbers, phone numbers, message text or image URLs. Log user ids.
 - Config only via `src/config.py` settings. No `os.environ` reads elsewhere. No secrets in the repo; `.env.example` lists keys only.
 

@@ -15,7 +15,9 @@ os.environ["DATABASE_URL"] = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+asyncpg://reveal:reveal@localhost:5433/reveal_test"
 )
 os.environ["ADMIN_TOKEN"] = "test-admin-token"
+os.environ["ADMIN_EMAILS"] = '["admin@gmail.com"]'
 
+from src.auth.dependencies import sign_in_limiter
 from src.database import engine
 from src.main import app
 from src.models import Base
@@ -48,6 +50,7 @@ def _database() -> Iterator[None]:
 async def _clean_state() -> AsyncIterator[None]:
     yield
     join_limiter.reset()
+    sign_in_limiter.reset()
     tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
     if tables:
         async with engine.begin() as conn:
