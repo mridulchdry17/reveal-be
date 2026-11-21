@@ -5,6 +5,7 @@ from src.auth.router import router as auth_router
 from src.config import settings
 from src.exceptions import DomainError, domain_error_handler
 from src.health.router import router as health_router
+from src.verification.router import router as verification_router
 from src.waitlist.router import router as waitlist_router
 
 # Product endpoints live under /v1. Installed PWAs keep old code cached, so a breaking
@@ -28,6 +29,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(DomainError, domain_error_handler)
     app.include_router(health_router)
     app.include_router(auth_router, prefix=API_V1)
+    app.include_router(verification_router, prefix=API_V1)
     app.include_router(waitlist_router, prefix=API_V1)
     return app
 
