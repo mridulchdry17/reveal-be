@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # OAuth client ID from Google Cloud Console (public, not a secret). Empty disables sign-in.
     google_client_id: str = ""
-    # Google accounts (lowercase) that get admin rights. Set in .env, e.g. ADMIN_EMAILS='["a@gmail.com"]'.
+    # Google accounts that get admin rights, e.g. ADMIN_EMAILS='["a@gmail.com"]' in .env.
     admin_emails: list[str] = []
     session_days: int = 30
     sign_ins_per_ip_per_hour: int = 20
