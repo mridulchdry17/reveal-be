@@ -1,0 +1,19 @@
+[Unit]
+Description=Reveal API staging (pre-release branch)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=azureuser
+WorkingDirectory=/home/azureuser/reveal-be-staging
+# Settings come from /home/azureuser/reveal-be-staging/.env: database reveal_staging,
+# ENVIRONMENT=staging, CORS for the pre-release preview. Never the production database.
+# Caddy strips the /staging prefix; --root-path keeps /docs links correct.
+ExecStart=/home/azureuser/reveal-be-staging/.venv/bin/uvicorn src.main:app --host 127.0.0.1 --port 8002 --root-path /staging --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=always
+RestartSec=3
+# Smaller cap than production: the VM has <1 GB RAM and production comes first.
+MemoryMax=250M
+
+[Install]
+WantedBy=multi-user.target
