@@ -19,6 +19,13 @@ class UserAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     email: Mapped[str] = mapped_column(String(320), unique=True)
     name: Mapped[str] = mapped_column(String(200))
 
+    # Student verification. Set once, never edited by the user (rule 7).
+    # How they proved it: see VerificationMethod. None = not verified yet.
+    verified_via: Mapped[str | None] = mapped_column(String(20))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The @college address that verified them. One college email verifies one account.
+    college_email: Mapped[str | None] = mapped_column(String(320), unique=True)
+
 
 class AuthSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """A signed-in device. Deleting the row signs that device out."""
