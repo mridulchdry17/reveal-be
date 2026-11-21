@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     session_days: int = 30
     # Google Workspace domain of the college. A Google account on it proves you're a student.
     college_domain: str = "adgips.ac.in"
+
+    # ID card + selfie photos waiting for review. Outside the code checkout on servers
+    # (e.g. /var/lib/reveal/production/verification) so deploys never touch them.
+    verification_photos_dir: str = "var/verification"
+    verification_photo_max_bytes: int = 5_000_000
+    # Unreviewed photos are deleted after this many days.
+    verification_photo_days: int = 30
+    verification_uploads_per_ip_per_hour: int = 10
     sign_ins_per_ip_per_hour: int = 20
 
     @property
