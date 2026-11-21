@@ -11,7 +11,7 @@ from src.auth.dependencies import (
     get_google_verifier,
     limit_sign_ins,
 )
-from src.auth.schemas import GoogleSignInRequest, Me, SignInResponse
+from src.auth.schemas import CollegeEmailRequest, GoogleSignInRequest, Me, SignInResponse
 from src.database import get_session
 from src.schemas import ErrorResponse
 
@@ -64,3 +64,26 @@ async def sign_out(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> None:
     await service.sign_out(session, token)
+
+
+@router.post(
+    "/college-email",
+    response_model=Me,
+    status_code=status.HTTP_200_OK,
+    summary="Verify as a student with a college Google account",
+    dependencies=[Depends(limit_sign_ins)],
+    responses={
+        401: {"model": ErrorResponse, "description": "Not signed in, or invalid credential"},
+        403: {"model": ErrorResponse, "description": "Not a college Google account"},
+        409: {"model": ErrorResponse, "description": "College email verified another account"},
+        429: {"model": ErrorResponse, "description": "Too many attempts"},
+    },
+)
+async def verify_college_email(
+    body: CollegeEmailRequest,
+    user: Annotated[Me, Depends(current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    verify: Annotated[GoogleVerifier, Depends(get_google_verifier)],
+) -> Me:
+    identity = await verify(body.credential)
+    return await service.verify_college_email(session, user.id, identity)

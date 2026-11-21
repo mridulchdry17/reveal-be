@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, Field
 
+from src.auth.constants import VerificationMethod
+
 
 class GoogleSignInRequest(BaseModel):
     credential: str = Field(
@@ -9,11 +11,17 @@ class GoogleSignInRequest(BaseModel):
     )
 
 
+class CollegeEmailRequest(GoogleSignInRequest):
+    """A credential for the user's college Google account (not the one they signed in with)."""
+
+
 class Me(BaseModel):
     id: uuid.UUID
     email: str
     name: str
     is_admin: bool
+    verified: bool = Field(description="Proved they're a student at the college")
+    verified_via: VerificationMethod | None
 
 
 class SignInResponse(BaseModel):

@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     # Google accounts that get admin rights, e.g. ADMIN_EMAILS='["a@gmail.com"]' in .env.
     admin_emails: list[str] = []
     session_days: int = 30
+    # Google Workspace domain of the college. A Google account on it proves you're a student.
+    college_domain: str = "adgips.ac.in"
     sign_ins_per_ip_per_hour: int = 20
 
     @property

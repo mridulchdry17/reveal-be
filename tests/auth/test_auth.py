@@ -12,18 +12,23 @@ from src.database import engine
 from src.exceptions import Unauthenticated
 from src.main import app
 
+COLLEGE_EMAIL = "/v1/auth/college-email"
 ME = "/v1/auth/me"
 SIGN_IN = "/v1/auth/google"
 SIGN_OUT = "/v1/auth/sign-out"
 
 
 async def fake_verify(credential: str) -> GoogleIdentity:
-    """Test credentials look like 'sub|email|name|verified'; 'bad' is rejected."""
+    """Test credentials look like 'sub|email|name|verified[|hosted domain]'; 'bad' is rejected."""
     if credential == "bad":
         raise Unauthenticated("Invalid Google credential")
-    sub, email, name, verified = credential.split("|")
+    sub, email, name, verified, *hd = credential.split("|")
     return GoogleIdentity(
-        sub=sub, email=email, email_verified=verified == "yes", name=name, hosted_domain=None
+        sub=sub,
+        email=email,
+        email_verified=verified == "yes",
+        name=name,
+        hosted_domain=hd[0] if hd else None,
     )
 
 
@@ -51,6 +56,8 @@ async def test_first_sign_in_creates_account_and_returns_token(client: AsyncClie
     assert body["user"]["email"] == "aanya@gmail.com"
     assert body["user"]["name"] == "Aanya"
     assert body["user"]["is_admin"] is False
+    assert body["user"]["verified"] is False
+    assert body["user"]["verified_via"] is None
 
 
 async def test_signing_in_again_returns_the_same_account(client: AsyncClient) -> None:
@@ -134,3 +141,98 @@ async def test_sign_in_is_rate_limited_per_ip(client: AsyncClient) -> None:
     response = await sign_in(client)
 
     assert response.status_code == 429
+
+
+# College email verification
+
+COLLEGE = "sub-c|aanya.0411@adgips.ac.in|Aanya|yes|adgips.ac.in"
+
+
+async def verify_college(client: AsyncClient, token: str, credential: str = COLLEGE):
+    return await client.post(COLLEGE_EMAIL, json={"credential": credential}, headers=auth(token))
+
+
+async def test_college_google_account_verifies_the_signed_in_user(client: AsyncClient) -> None:
+    token = (await sign_in(client)).json()["token"]
+
+    response = await verify_college(client, token)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["email"] == "aanya@gmail.com"  # still signed in with personal Gmail
+    assert body["verified"] is True
+    assert body["verified_via"] == "college_email"
+    assert (await client.get(ME, headers=auth(token))).json()["verified"] is True
+
+
+@pytest.mark.parametrize(
+    "credential",
+    [
+        "sub-c|aanya@gmail.com|Aanya|yes",  # personal Gmail
+        "sub-c|aanya@adgips.ac.in|Aanya|yes",  # college address, but no hd claim
+        "sub-c|aanya@other.edu|Aanya|yes|other.edu",  # another college's Workspace
+        "sub-c|aanya@adgips.ac.in|Aanya|no|adgips.ac.in",  # email not verified by Google
+    ],
+)
+async def test_only_a_college_workspace_account_verifies(
+    client: AsyncClient, credential: str
+) -> None:
+    token = (await sign_in(client)).json()["token"]
+
+    response = await verify_college(client, token, credential)
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "not_college_account"
+    assert (await client.get(ME, headers=auth(token))).json()["verified"] is False
+
+
+async def test_one_college_email_verifies_one_account(client: AsyncClient) -> None:
+    first = (await sign_in(client)).json()["token"]
+    second = (await sign_in(client, "sub-2|rohan@gmail.com|Rohan|yes")).json()["token"]
+    await verify_college(client, first)
+
+    response = await verify_college(client, second)
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "college_email_taken"
+    assert (await client.get(ME, headers=auth(second))).json()["verified"] is False
+
+
+async def test_verifying_again_changes_nothing(client: AsyncClient) -> None:
+    token = (await sign_in(client)).json()["token"]
+    await verify_college(client, token)
+
+    response = await verify_college(
+        client, token, "sub-d|other.0412@adgips.ac.in|Other|yes|adgips.ac.in"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["verified"] is True
+    # The first college email still holds the claim; the second is free for its owner.
+    other = (await sign_in(client, "sub-d|other.0412@adgips.ac.in|Other|yes|adgips.ac.in")).json()
+    assert other["user"]["verified"] is True
+
+
+async def test_college_email_needs_sign_in(client: AsyncClient) -> None:
+    response = await client.post(COLLEGE_EMAIL, json={"credential": COLLEGE})
+
+    assert response.status_code == 401
+
+
+async def test_signing_in_with_a_college_account_verifies_straight_away(
+    client: AsyncClient,
+) -> None:
+    response = await sign_in(client, COLLEGE)
+
+    assert response.json()["user"]["verified"] is True
+    assert response.json()["user"]["verified_via"] == "college_email"
+
+
+async def test_college_sign_in_does_not_steal_a_claimed_email(client: AsyncClient) -> None:
+    token = (await sign_in(client)).json()["token"]
+    await verify_college(client, token)
+
+    response = await sign_in(client, COLLEGE)
+
+    assert response.status_code == 200
+    assert response.json()["user"]["verified"] is False
