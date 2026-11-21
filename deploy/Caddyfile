@@ -1,0 +1,6 @@
+# Installed at /etc/caddy/Caddyfile. Caddy gets and renews the HTTPS certificate itself.
+# Swap the hostname for your own domain (e.g. api.reveal.in) once DNS points at the VM.
+reveal-api.koreacentral.cloudapp.azure.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8001
+}

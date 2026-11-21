@@ -1,0 +1,18 @@
+[Unit]
+Description=Reveal API (FastAPI / uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=azureuser
+WorkingDirectory=/home/azureuser/reveal-be
+# Settings come from /home/azureuser/reveal-be/.env (read by src/config.py).
+# One worker on purpose: the in-memory rate limiter is per process.
+ExecStart=/home/azureuser/reveal-be/.venv/bin/uvicorn src.main:app --host 127.0.0.1 --port 8001 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=always
+RestartSec=3
+# The VM has <1 GB RAM: keep the API from starving everything else.
+MemoryMax=350M
+
+[Install]
+WantedBy=multi-user.target

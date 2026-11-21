@@ -1,0 +1,36 @@
+name: CI
+
+# Tests only. Deploys are manual for now: after merging, run deploy/deploy.sh on the VM
+# (see README "Production").
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: reveal
+          POSTGRES_PASSWORD: reveal
+          POSTGRES_DB: reveal
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U reveal"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://reveal:reveal@localhost:5432/reveal_test
+      DATABASE_URL: postgresql+asyncpg://reveal:reveal@localhost:5432/reveal_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pyright
+      - run: uv run pytest -q
