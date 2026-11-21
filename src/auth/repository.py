@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 
 from sqlalchemy import delete, select
@@ -8,6 +9,14 @@ from src.auth.models import AuthSession, UserAccount
 
 async def get_user_by_google_sub(session: AsyncSession, google_sub: str) -> UserAccount | None:
     return await session.scalar(select(UserAccount).where(UserAccount.google_sub == google_sub))
+
+
+async def get_user(session: AsyncSession, user_id: uuid.UUID) -> UserAccount | None:
+    return await session.get(UserAccount, user_id)
+
+
+async def get_user_by_college_email(session: AsyncSession, email: str) -> UserAccount | None:
+    return await session.scalar(select(UserAccount).where(UserAccount.college_email == email))
 
 
 async def add(session: AsyncSession, row: UserAccount | AuthSession) -> None:
