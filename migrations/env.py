@@ -7,6 +7,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import src.auth.models
+import src.verification.models
 import src.waitlist.models  # noqa: F401
 from src.config import settings
 from src.models import Base

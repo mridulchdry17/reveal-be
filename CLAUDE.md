@@ -38,7 +38,8 @@ src/
   health/              smallest example of the layers
   waitlist/            first product domain: copy its shape for new ones
   auth/                Google sign-in, bearer sessions (hashed), current_user / admin_user
-  <domain>/            planned: verification, profiles, drops, matches,
+  verification/        ID card + selfie review requests; photos as files (storage.py)
+  <domain>/            planned: profiles, drops, matches,
                        chats, swaps, guess, safety, notifications, moderation
     router.py          HTTP only: parse, call service, return schema
     schemas.py         Pydantic request/response models
@@ -98,6 +99,7 @@ These are the reason the product exists. Every one needs a test, and a change th
 - Signed-in routes use `Depends(current_user)`; admin screens use `Depends(admin_user)` (admins = `ADMIN_EMAILS`). The older `require_admin` (`X-Admin-Token`) is only for scripts like the waitlist CSV export; those routes use `include_in_schema=False`, so they never reach the frontend's generated types.
 - Sign-in: the frontend sends Google's ID token to `POST /v1/auth/google`; we verify it with `google-auth` and return an opaque session token (stored only as SHA-256). Any Google account can sign in; being a verified student is a separate step. Tests override `get_google_verifier`, never call Google.
 - Student verification lives on `user_account` (`verified_via`, `verified_at`, `college_email`); other domains set it only through `auth.service`. College email: `POST /v1/auth/college-email` takes a credential for the user's college Google account and trusts only Google's `hd` claim (`settings.college_domain`), never the address alone. Signing in with a college account verifies straight away.
+- ID card verification: `POST /v1/verification/id-card` (multipart selfie + id_card) stores both photos as files in `settings.verification_photos_dir` (mode 600, random names, type checked from the bytes) and a `verification_request` row. Photos are deleted on review and after `verification_photo_days` unreviewed (swept on each upload). On servers the folder is `/var/lib/reveal/<env>/verification`, outside the checkout, so deploys never touch it. Never serve that folder; admins read photos only through the API.
 - Never log PII: no names, enrollment numbers, phone numbers, message text or image URLs. Log user ids.
 - Config only via `src/config.py` settings. No `os.environ` reads elsewhere. No secrets in the repo; `.env.example` lists keys only.
 
