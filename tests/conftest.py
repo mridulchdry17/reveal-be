@@ -18,9 +18,11 @@ os.environ["ADMIN_TOKEN"] = "test-admin-token"
 os.environ["ADMIN_EMAILS"] = '["admin@gmail.com"]'
 
 from src.auth.dependencies import sign_in_limiter
+from src.config import settings
 from src.database import engine
 from src.main import app
 from src.models import Base
+from src.verification.dependencies import upload_limiter
 from src.waitlist.dependencies import join_limiter
 
 ADMIN_HEADERS = {"X-Admin-Token": "test-admin-token"}
@@ -47,10 +49,17 @@ def _database() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
+def _photos_dir(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verification photos go to a fresh temporary folder in every test."""
+    monkeypatch.setattr(settings, "verification_photos_dir", str(tmp_path / "photos"))
+
+
+@pytest.fixture(autouse=True)
 async def _clean_state() -> AsyncIterator[None]:
     yield
     join_limiter.reset()
     sign_in_limiter.reset()
+    upload_limiter.reset()
     tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
     if tables:
         async with engine.begin() as conn:
