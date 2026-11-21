@@ -6,7 +6,8 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-import src.waitlist.models  # noqa: F401  (each domain's models must be imported here)
+import src.auth.models
+import src.waitlist.models  # noqa: F401
 from src.config import settings
 from src.models import Base
 
