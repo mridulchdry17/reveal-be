@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from src.admin.constants import AdminActionKind
+from src.safety.constants import ReportReason
 
 
 class ReviewUser(BaseModel):
@@ -43,4 +44,15 @@ class AdminActionOut(BaseModel):
     admin_email: str
     target_email: str
     note: str | None
+    created_at: datetime
+
+
+class AdminReport(BaseModel):
+    """A student's report. Reporting already blocked them and ended the match."""
+
+    id: uuid.UUID
+    reason: ReportReason
+    details: str | None
+    reporter_email: str | None = Field(description="Null if that account was deleted")
+    reported_email: str | None
     created_at: datetime

@@ -8,10 +8,11 @@ from src.admin import repository
 from src.admin.constants import AdminActionKind
 from src.admin.exceptions import AccountNotFound, AlreadyVerified
 from src.admin.models import AdminAction
-from src.admin.schemas import AdminActionOut, LetInResult, Review, ReviewUser
+from src.admin.schemas import AdminActionOut, AdminReport, LetInResult, Review, ReviewUser
 from src.auth import service as auth_service
 from src.auth.constants import VerificationMethod
 from src.auth.schemas import Me
+from src.safety import service as safety_service
 from src.verification import service as verification_service
 
 
@@ -76,6 +77,28 @@ async def recent_actions(session: AsyncSession, limit: int = 100) -> list[AdminA
             created_at=a.created_at,
         )
         for a in await repository.recent(session, limit)
+    ]
+
+
+async def recent_reports(session: AsyncSession, limit: int = 100) -> list[AdminReport]:
+    reports = await safety_service.recent_reports(session, limit)
+    ids = {i for r in reports for i in (r.reporter_id, r.reported_id) if i}
+    users = await auth_service.accounts(session, list(ids)) if ids else {}
+
+    def email(user_id: uuid.UUID | None) -> str | None:
+        user = users.get(user_id) if user_id else None
+        return user.email if user else None
+
+    return [
+        AdminReport(
+            id=r.id,
+            reason=r.reason,
+            details=r.details,
+            reporter_email=email(r.reporter_id),
+            reported_email=email(r.reported_id),
+            created_at=r.created_at,
+        )
+        for r in reports
     ]
 
 

@@ -6,7 +6,14 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.admin import service
-from src.admin.schemas import AdminActionOut, LetInRequest, LetInResult, RejectRequest, Review
+from src.admin.schemas import (
+    AdminActionOut,
+    AdminReport,
+    LetInRequest,
+    LetInResult,
+    RejectRequest,
+    Review,
+)
 from src.auth.dependencies import admin_user
 from src.auth.schemas import Me
 from src.database import get_session
@@ -93,3 +100,13 @@ async def let_in(body: LetInRequest, admin: Admin, session: Session) -> LetInRes
 )
 async def actions(_: Admin, session: Session) -> list[AdminActionOut]:
     return await service.recent_actions(session)
+
+
+@router.get(
+    "/reports",
+    response_model=list[AdminReport],
+    summary="Students' reports, newest first",
+    responses=_ADMIN,
+)
+async def reports(_: Admin, session: Session) -> list[AdminReport]:
+    return await service.recent_reports(session)
