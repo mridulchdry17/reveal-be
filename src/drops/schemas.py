@@ -1,0 +1,34 @@
+import uuid
+from datetime import date, datetime
+
+from pydantic import BaseModel, Field, field_validator
+
+from src.drops.constants import Decision
+from src.matches.constants import COMMENT_MAX
+from src.profiles.schemas import CleanText, PublicProfile
+
+
+class DropItemOut(BaseModel):
+    id: uuid.UUID
+    decision: Decision | None = Field(description="Null until liked or passed")
+    profile: PublicProfile
+
+
+class Tonight(BaseModel):
+    drop_date: date = Field(description="College-time date this drop opened, at 9 PM")
+    next_drop_at: datetime
+    items: list[DropItemOut]
+
+
+class LikeRequest(BaseModel):
+    prompt_id: uuid.UUID = Field(description="Which of their prompts you're liking")
+    comment: CleanText | None = Field(default=None, max_length=COMMENT_MAX)
+
+    @field_validator("comment")
+    @classmethod
+    def _blank_is_none(cls, value: str | None) -> str | None:
+        return value or None
+
+
+class LikeResult(BaseModel):
+    matched: bool = Field(description="They had already liked you: it's a match")

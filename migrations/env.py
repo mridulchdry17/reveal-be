@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import src.admin.models
 import src.auth.models
+import src.drops.models
+import src.matches.models
 import src.profiles.models
 import src.verification.models
 import src.waitlist.models  # noqa: F401
