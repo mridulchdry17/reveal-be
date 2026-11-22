@@ -1,4 +1,4 @@
-from src.exceptions import Conflict, DomainError
+from src.exceptions import Conflict, DomainError, NotFound
 
 
 class AlreadyVerified(Conflict):
@@ -17,3 +17,11 @@ class PhotoTooLarge(DomainError):
 class NotAPhoto(DomainError):
     status_code = 422
     code = "not_a_photo"
+
+
+class ReviewNotFound(NotFound):
+    code = "review_not_found"
+
+
+class AlreadyReviewed(Conflict):
+    code = "already_reviewed"

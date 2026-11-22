@@ -52,5 +52,5 @@ async def delete(*names: str | None) -> None:
             await run_in_threadpool((_root() / name).unlink, True)
 
 
-def exists(name: str) -> bool:
-    return (_root() / name).is_file()
+def path_for(name: str) -> Path:
+    return _root() / name

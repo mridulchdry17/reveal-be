@@ -29,3 +29,16 @@ async def pending_submitted_before(
 async def add(session: AsyncSession, row: VerificationRequest) -> None:
     session.add(row)
     await session.flush()
+
+
+async def get(session: AsyncSession, request_id: uuid.UUID) -> VerificationRequest | None:
+    return await session.get(VerificationRequest, request_id)
+
+
+async def list_pending(session: AsyncSession) -> list[VerificationRequest]:
+    rows = await session.scalars(
+        select(VerificationRequest)
+        .where(VerificationRequest.status == RequestStatus.PENDING)
+        .order_by(VerificationRequest.submitted_at)
+    )
+    return list(rows)

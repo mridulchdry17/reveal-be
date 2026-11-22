@@ -13,7 +13,7 @@ from src.auth.google import GoogleIdentity
 from src.auth.models import AuthSession, UserAccount
 from src.auth.schemas import Me, SignInResponse
 from src.config import settings
-from src.exceptions import Unauthenticated
+from src.exceptions import NotFound, Unauthenticated
 
 
 async def sign_in_with_google(session: AsyncSession, identity: GoogleIdentity) -> SignInResponse:
@@ -57,6 +57,37 @@ async def verify_college_email(
         raise CollegeEmailTaken("That college email already verified another account")
     await session.commit()
     return _to_me(user)
+
+
+async def mark_verified(
+    session: AsyncSession, user_id: uuid.UUID, method: VerificationMethod
+) -> bool:
+    """Verify a student after an ID check or an admin's say-so. Doesn't commit.
+
+    False if they were already verified: verified fields never change once set (rule 7).
+    """
+    user = await repository.get_user(session, user_id)
+    if user is None:
+        raise NotFound("No such account")
+    if user.verified_at is not None:
+        return False
+    user.verified_via = method
+    user.verified_at = datetime.now(UTC)
+    await session.flush()
+    return True
+
+
+async def find_account(session: AsyncSession, email: str) -> Me | None:
+    """The account that signs in with this Google email, or verified with this college email."""
+    email = email.strip().lower()
+    user = await repository.get_user_by_email(session, email)
+    if user is None:
+        user = await repository.get_user_by_college_email(session, email)
+    return _to_me(user) if user else None
+
+
+async def accounts(session: AsyncSession, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, Me]:
+    return {u.id: _to_me(u) for u in await repository.get_users(session, user_ids)}
 
 
 def is_college_account(identity: GoogleIdentity) -> bool:

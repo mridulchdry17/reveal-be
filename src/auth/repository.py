@@ -19,6 +19,14 @@ async def get_user_by_college_email(session: AsyncSession, email: str) -> UserAc
     return await session.scalar(select(UserAccount).where(UserAccount.college_email == email))
 
 
+async def get_user_by_email(session: AsyncSession, email: str) -> UserAccount | None:
+    return await session.scalar(select(UserAccount).where(UserAccount.email == email))
+
+
+async def get_users(session: AsyncSession, user_ids: list[uuid.UUID]) -> list[UserAccount]:
+    return list(await session.scalars(select(UserAccount).where(UserAccount.id.in_(user_ids))))
+
+
 async def add(session: AsyncSession, row: UserAccount | AuthSession) -> None:
     session.add(row)
     await session.flush()
