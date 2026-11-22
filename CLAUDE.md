@@ -40,9 +40,11 @@ src/
   auth/                Google sign-in, bearer sessions (hashed), current_user / admin_user
   verification/        ID card + selfie review requests; photos as files (storage.py)
   admin/               review queue, approve/reject, let someone in, action log
-  profiles/            the owner's profile: basics, 3 prompts, 7 cards, preferences
-  <domain>/            planned: drops, matches,
-                       chats, swaps, guess, safety, notifications, moderation
+  profiles/            basics, 3 prompts, 7 cards, preferences; what others may see; drop audience
+  drops/               tonight's drop: 5 profiles a night at 9 PM, like a prompt or pass
+  matches/             likes (Likes list, match back, pass) and matches
+  clock.py             now() as a dependency, so tests can set the time
+  <domain>/            planned: chats, swaps, guess, safety, notifications, moderation
     router.py          HTTP only: parse, call service, return schema
     schemas.py         Pydantic request/response models
     models.py          SQLAlchemy tables
@@ -76,12 +78,12 @@ Calls go one way only: **router → service → repository → database**. A lay
 
 These are the reason the product exists. Every one needs a test, and a change that touches one needs a reviewer.
 
-1. **Visibility has one source of truth:** `profiles.service.visible_cards(viewer, owner)`. Every endpoint that returns another user's data goes through it. Never return a hidden field and rely on the frontend to hide it.
+1. **Visibility has one source of truth:** `profiles.service.public_profiles(viewer, owners)`. Every endpoint that returns another user's data goes through it. Never return a hidden field and rely on the frontend to hide it.
 2. **No one-sided reveal.** A hidden card opens for a pair only when both have accepted the same swap. Acceptance is one transaction that opens both sides or neither.
 3. **Order:** cards 1–5 swap in any order; photo (6) only after at least one card swap; contact (7) only after photo.
 4. **Photo pieces:** 9 per photo. Each card swap opens 2, each correct guess opens 1, the photo swap opens all. Pieces are cut and watermarked per viewer on the server; the full image never leaves the server before the photo swap.
 5. **Step away / unmatch / block revokes everything** revealed between the pair, for both, immediately.
-6. **Audience filters apply both ways:** first-years see and are seen only by first-years (unless they opt out); hide list and blocks are symmetric and silent.
+6. **Audience filters apply both ways:** someone appears in your drop only if their gender is in your "Interested in" and yours is in theirs. Year never limits who you see ("Match me on" only ranks). Hide list and blocks are symmetric and silent.
 7. **Verified fields are read-only to users** (official name, branch, year, enrollment number). They're set when a student is verified (college Google account, ID card review, or an admin letting them in) and only admins can change them. One account per enrollment number and per college email.
 8. **Selfie and ID images are deleted when review ends**, approve or reject. Store only the outcome.
 9. **"Women write first"** when enabled: the other side can't send until she has.
@@ -93,7 +95,8 @@ These are the reason the product exists. Every one needs a test, and a change th
 - Domain errors are exceptions in `<domain>/exceptions.py`, mapped to HTTP in one handler in `src/exceptions.py`. Don't raise `HTTPException` from services.
 - DB: singular snake_case tables, `_at` for timestamps (UTC, tz-aware), `_id` FKs, explicit `MetaData(naming_convention=...)`. Do joins and filtering in SQL, not Python loops.
 - Migrations are reviewed, reversible, never edited after merge. No data backfills inside schema migrations.
-- Anything that must survive a crash or retry (drop generation, push, image processing) is an Arq job, not `BackgroundTasks`.
+- Anything that must survive a crash or retry (push, image processing) is an Arq job, not `BackgroundTasks`. Exception for now: the drop is built on the first `GET /v1/drops/tonight` after 9 PM and saved (`drop_item`), under a per-viewer advisory lock, and tops up while it has fewer than 5. No Redis/worker until push needs a 9 PM job; `drops.service` stays the one place that picks who's in a drop.
+- Drops and likes: `drops.service` asks `profiles.service.drop_candidates` (audience both ways, best fit first) and excludes anyone shown in the last 14 days, ever liked or passed, or with a like either way (`matches.service.connected_ids`). Liking copies the prompt text into `profile_like`; a like back (from the Likes list or the other's drop) creates one `match` row per pair. Passing is silent: the liker is never told. Use `src.clock.now` for the time, never `datetime.now()` in services.
 - Every route sets `response_model` and `status_code`, and lists its error responses with `ErrorResponse`. API docs are off outside `local` and `staging`.
 - Product routes live under `/v1`. A breaking change ships as a new version next to the old one, because installed PWAs keep old code cached.
 - Tables use `UUIDPrimaryKeyMixin` + `TimestampMixin`. Never expose sequential ids.
