@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     verification_uploads_per_ip_per_hour: int = 10
     sign_ins_per_ip_per_hour: int = 20
 
+    # Profile photos and voice notes (src/media.py). With an account name they go to that
+    # Azure storage account, signed in with the VM's managed identity (no keys); without
+    # one (local, tests) they're files under media_dir. Never public either way.
+    media_storage_account: str = ""
+    media_container: str = "local"
+    media_dir: str = "var/media"
+    profile_photo_max_bytes: int = 8_000_000
+    media_uploads_per_ip_per_hour: int = 30
+
     @property
     def show_docs(self) -> bool:
         return self.environment in ("local", "staging")

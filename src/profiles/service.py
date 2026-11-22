@@ -1,15 +1,25 @@
+import secrets
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src import media
 from src.auth import service as auth_service
 from src.auth.schemas import Me
+from src.config import settings
 from src.profiles import constants as c
-from src.profiles import repository
-from src.profiles.exceptions import ProfileIncomplete, PromptNotFound
+from src.profiles import photo, repository
+from src.profiles.exceptions import (
+    NotAPhoto,
+    PhotoNotFound,
+    PhotoTooLarge,
+    ProfileIncomplete,
+    PromptNotFound,
+)
 from src.profiles.models import Profile, ProfilePrompt
 from src.profiles.schemas import (
     BasicsUpdate,
@@ -82,6 +92,43 @@ async def remove_contact(session: AsyncSession, user: Me) -> MyProfile:
     profile.contact_kind = None
     profile.contact_value = None
     return await _save(session, user, profile)
+
+
+async def update_photo(session: AsyncSession, user: Me, data: bytes) -> MyProfile:
+    """Card 6. Re-encoded and stored privately; the old photo is deleted once saved."""
+    if len(data) > settings.profile_photo_max_bytes:
+        raise PhotoTooLarge("That photo is too large")
+    jpeg = await run_in_threadpool(photo.reencode, data)
+    if jpeg is None:
+        raise NotAPhoto("That file isn't a JPEG, PNG or WebP photo")
+    profile = await _get_or_create(session, user)
+    old_key = profile.photo_key
+    key = f"photos/{user.id}/{secrets.token_hex(16)}.jpg"
+    await media.put(key, jpeg, "image/jpeg")
+    profile.photo_key = key
+    mine = await _save(session, user, profile)
+    if old_key:
+        await media.delete(old_key)
+    return mine
+
+
+async def my_photo(session: AsyncSession, user: Me) -> bytes:
+    """The owner's own photo. Nobody else gets it until a photo swap (part 4)."""
+    profile = await repository.get_for_user(session, user.id)
+    data = await media.get(profile.photo_key) if profile and profile.photo_key else None
+    if data is None:
+        raise PhotoNotFound("No photo yet")
+    return data
+
+
+async def remove_photo(session: AsyncSession, user: Me) -> MyProfile:
+    profile = await _get_or_create(session, user)
+    old_key = profile.photo_key
+    profile.photo_key = None
+    mine = await _save(session, user, profile)
+    if old_key:
+        await media.delete(old_key)
+    return mine
 
 
 async def update_preferences(session: AsyncSession, user: Me, body: PreferencesUpdate) -> MyProfile:
@@ -200,6 +247,7 @@ def _to_mine(user: Me, profile: Profile | None, prompts: list[ProfilePrompt]) ->
         year=p.year if p else None,
         hometown=p.hometown if p else None,
         looking_for=c.LookingFor(p.looking_for) if p and p.looking_for else None,
+        has_photo=bool(p and p.photo_key),
         contact=(
             Contact.model_construct(kind=c.ContactKind(p.contact_kind), value=p.contact_value)
             if p and p.contact_kind and p.contact_value

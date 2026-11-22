@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from httpx import AsyncClient
 
 from tests.drops.helpers import Clock, drop, finished, nicknames
+from tests.profiles.test_photo import jpeg
 from tests.profiles.test_profile import UNVERIFIED, student
 
 
@@ -171,3 +172,16 @@ async def test_contact_never_reaches_the_drop(client: AsyncClient) -> None:
 
     assert "kabir.k" not in response.text
     assert "contact" in response.json()["items"][0]["profile"]["hidden_cards"]
+
+
+async def test_photo_never_reaches_the_drop(client: AsyncClient) -> None:
+    aanya = await finished(client, "Aanya", "woman", "men")
+    kabir = await finished(client, "Kabir", "man", "women")
+    photo = jpeg(400, 400)
+    files = {"photo": ("p.jpg", photo, "image/jpeg")}
+    assert (await client.put("/v1/profile/me/photo", files=files, headers=kabir)).is_success
+
+    profile = (await drop(client, aanya))["items"][0]["profile"]
+
+    assert "photo" in profile["hidden_cards"]
+    assert {"has_photo", "photo_key"}.isdisjoint(profile)
