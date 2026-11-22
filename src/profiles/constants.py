@@ -79,10 +79,13 @@ class Card(StrEnum):
 
 # Shown to everyone, the same for every profile. Every other card opens only by swap.
 SHOWN_CARDS = (Card.LOOKING_FOR,)
-# Cards other students see on a profile. Voice joins once voice notes exist.
+# Cards other students see on a profile, in order. Voice is optional: it's listed only for
+# profiles that have one (see profiles.service._to_public).
 PUBLIC_CARDS = (
-    Card.FIRST_NAME, Card.BRANCH, Card.HOMETOWN, Card.LOOKING_FOR, Card.PHOTO, Card.CONTACT,
+    Card.FIRST_NAME, Card.BRANCH, Card.HOMETOWN, Card.LOOKING_FOR, Card.VOICE, Card.PHOTO,
+    Card.CONTACT,
 )  # fmt: skip
+VOICE_MAX_SECONDS = 30
 
 # Whose "Interested in" includes someone of this gender. Audience filters apply both ways.
 WANTED_BY = {

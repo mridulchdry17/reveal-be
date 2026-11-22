@@ -1,12 +1,13 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import verified_user
 from src.auth.schemas import Me
 from src.config import settings
 from src.database import get_session
+from src.profiles import constants as c
 from src.profiles import service
 from src.profiles.dependencies import limit_media_uploads
 from src.profiles.schemas import (
@@ -124,6 +125,56 @@ async def my_photo(user: Student, session: Session) -> Response:
 )
 async def remove_photo(user: Student, session: Session) -> MyProfile:
     return await service.remove_photo(session, user)
+
+
+@router.put(
+    "/me/voice",
+    response_model=MyProfile,
+    status_code=status.HTTP_200_OK,
+    summary="Card 5: my voice note (optional), private until the voice swap",
+    dependencies=[Depends(limit_media_uploads)],
+    responses={
+        **_ERRORS,
+        413: {"model": ErrorResponse, "description": "Voice note too large"},
+        422: {"model": ErrorResponse, "description": "Not a WebM, MP4 or Ogg recording"},
+        429: {"model": ErrorResponse, "description": "Too many uploads"},
+    },
+)
+async def update_voice(
+    voice: Annotated[UploadFile, File(description="WebM/Opus, MP4/AAC or Ogg recording")],
+    seconds: Annotated[int, Form(ge=1, le=c.VOICE_MAX_SECONDS, description="Length")],
+    user: Student,
+    session: Session,
+) -> MyProfile:
+    data = await voice.read(settings.voice_note_max_bytes + 1)
+    return await service.update_voice(session, user, data, seconds)
+
+
+@router.get(
+    "/me/voice",
+    response_class=Response,
+    status_code=status.HTTP_200_OK,
+    summary="My own voice note (never cached)",
+    responses={
+        **_ERRORS,
+        200: {"content": {"audio/webm": {}, "audio/mp4": {}}, "description": "The recording"},
+        404: {"model": ErrorResponse, "description": "No voice note yet"},
+    },
+)
+async def my_voice(user: Student, session: Session) -> Response:
+    data, media_type = await service.my_voice(session, user)
+    return Response(data, media_type=media_type, headers={"Cache-Control": "no-store, private"})
+
+
+@router.delete(
+    "/me/voice",
+    response_model=MyProfile,
+    status_code=status.HTTP_200_OK,
+    summary="Remove my voice note",
+    responses=_ERRORS,
+)
+async def remove_voice(user: Student, session: Session) -> MyProfile:
+    return await service.remove_voice(session, user)
 
 
 @router.put(

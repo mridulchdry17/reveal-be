@@ -185,3 +185,20 @@ async def test_photo_never_reaches_the_drop(client: AsyncClient) -> None:
 
     assert "photo" in profile["hidden_cards"]
     assert {"has_photo", "photo_key"}.isdisjoint(profile)
+
+
+async def test_voice_is_a_hidden_card_only_when_they_have_one(client: AsyncClient) -> None:
+    aanya = await finished(client, "Aanya", "woman", "men")
+    kabir = await finished(client, "Kabir", "man", "women")
+    await finished(client, "Rohan", "man", "women")
+    files = {"voice": ("v.webm", b"\x1a\x45\xdf\xa3" + b"\x00" * 100, "audio/webm")}
+    voice = await client.put(
+        "/v1/profile/me/voice", files=files, data={"seconds": "9"}, headers=kabir
+    )
+    assert voice.is_success
+
+    items = (await drop(client, aanya))["items"]
+
+    hidden = {i["profile"]["nickname"]: i["profile"]["hidden_cards"] for i in items}
+    assert hidden["Kabir nick"] == ["first_name", "branch", "hometown", "voice", "photo", "contact"]
+    assert "voice" not in hidden["Rohan nick"]
