@@ -172,17 +172,3 @@ async def test_photo_and_contact_cannot_be_shown_without_a_swap(client: AsyncCli
     )
 
     assert response.status_code == 422
-
-
-async def test_women_write_first_only_applies_to_women(client: AsyncClient) -> None:
-    headers = await student(client)
-
-    body = (
-        await client.put(
-            "/v1/profile/me/preferences",
-            json={**PREFERENCES, "gender": "man", "women_write_first": True},
-            headers=headers,
-        )
-    ).json()
-
-    assert body["women_write_first"] is False

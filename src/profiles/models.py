@@ -30,7 +30,6 @@ class Profile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     gender: Mapped[str | None] = mapped_column(String(20))
     interested_in: Mapped[str | None] = mapped_column(String(20))
     match_on: Mapped[list[str]] = mapped_column(ARRAY(String(30)), default=list)
-    women_write_first: Mapped[bool] = mapped_column(default=False)
     # Set once every required part is filled; the drop only shows complete profiles.
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

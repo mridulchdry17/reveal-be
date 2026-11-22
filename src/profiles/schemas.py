@@ -77,9 +77,6 @@ class PreferencesUpdate(BaseModel):
     gender: c.Gender
     interested_in: c.InterestedIn
     match_on: list[c.MatchOn] = Field(default_factory=list)
-    women_write_first: bool = Field(
-        default=False, description="Only applies to women: matches wait for her to start"
-    )
 
 
 class PromptOut(BaseModel):
@@ -104,7 +101,6 @@ class MyProfile(BaseModel):
     gender: c.Gender | None
     interested_in: c.InterestedIn | None
     match_on: list[c.MatchOn]
-    women_write_first: bool
     # Which of the four screens are done, so the app can resume where they left off.
     basics_done: bool
     prompts_done: bool

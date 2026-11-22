@@ -86,7 +86,7 @@ These are the reason the product exists. Every one needs a test, and a change th
 6. **Audience filters apply both ways:** someone appears in your drop only if their gender is in your "Interested in" and yours is in theirs. Year never limits who you see ("Match me on" only ranks). Hide list and blocks are symmetric and silent.
 7. **Verified fields are read-only to users** (official name, branch, year, enrollment number). They're set when a student is verified (college Google account, ID card review, or an admin letting them in) and only admins can change them. One account per enrollment number and per college email.
 8. **Selfie and ID images are deleted when review ends**, approve or reject. Store only the outcome.
-9. **"Women write first"** when enabled: the other side can't send until she has.
+9. **Either person can write first** after a match. "Women write first" was removed on purpose (Nov 2026); don't add it back without asking.
 
 ## Conventions
 
