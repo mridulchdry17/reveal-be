@@ -1,5 +1,8 @@
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,13 +11,29 @@ from src.config import settings
 from src.verification import repository, storage
 from src.verification.constants import RequestStatus
 from src.verification.exceptions import (
+    AlreadyReviewed,
     AlreadySubmitted,
     AlreadyVerified,
     NotAPhoto,
     PhotoTooLarge,
+    ReviewNotFound,
 )
 from src.verification.models import VerificationRequest
 from src.verification.schemas import VerificationStatus
+
+
+@dataclass(frozen=True)
+class PendingReview:
+    id: uuid.UUID
+    user_id: uuid.UUID
+    submitted_at: datetime
+
+
+@dataclass(frozen=True)
+class Decision:
+    user_id: uuid.UUID
+    # Delete these once the decision is committed.
+    files: tuple[str | None, ...]
 
 
 async def status_for(session: AsyncSession, user_id: uuid.UUID) -> VerificationStatus:
@@ -75,6 +94,48 @@ async def purge_expired(session: AsyncSession) -> int:
     if rows:
         await session.commit()
     return len(rows)
+
+
+async def pending_reviews(session: AsyncSession) -> list[PendingReview]:
+    """Oldest first, so nobody waits longest."""
+    await purge_expired(session)
+    return [
+        PendingReview(id=r.id, user_id=r.user_id, submitted_at=r.submitted_at)
+        for r in await repository.list_pending(session)
+    ]
+
+
+async def photo_path(
+    session: AsyncSession, request_id: uuid.UUID, kind: Literal["selfie", "id_card"]
+) -> Path:
+    row = await repository.get(session, request_id)
+    name = (row.selfie_file if kind == "selfie" else row.id_card_file) if row else None
+    if name is None or not storage.path_for(name).is_file():
+        raise ReviewNotFound("Photo not found")
+    return storage.path_for(name)
+
+
+async def decide(
+    session: AsyncSession, request_id: uuid.UUID, approve: bool, reason: str | None = None
+) -> Decision:
+    """Record an admin's decision. Doesn't commit; delete the returned files after commit."""
+    row = await repository.get(session, request_id)
+    if row is None:
+        raise ReviewNotFound("No such review")
+    if row.status != RequestStatus.PENDING:
+        raise AlreadyReviewed("Someone already reviewed this")
+    files = (row.selfie_file, row.id_card_file)
+    row.status = RequestStatus.APPROVED if approve else RequestStatus.REJECTED
+    row.reject_reason = None if approve else reason
+    row.reviewed_at = datetime.now(UTC)
+    row.selfie_file = None
+    row.id_card_file = None
+    await session.flush()
+    return Decision(user_id=row.user_id, files=files)
+
+
+async def delete_photos(files: tuple[str | None, ...]) -> None:
+    await storage.delete(*files)
 
 
 def _check_photo(data: bytes, label: str) -> str:
