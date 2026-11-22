@@ -45,3 +45,10 @@ async def admin_user(user: Annotated[Me, Depends(current_user)]) -> Me:
     if not user.is_admin:
         raise PermissionDenied
     return user
+
+
+async def verified_user(user: Annotated[Me, Depends(current_user)]) -> Me:
+    """Signed in and a verified student. Every product endpoint uses this."""
+    if not user.verified:
+        raise PermissionDenied("Verify you're a student first")
+    return user
