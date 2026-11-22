@@ -172,3 +172,13 @@ async def test_photo_and_contact_cannot_be_shown_without_a_swap(client: AsyncCli
     )
 
     assert response.status_code == 422
+
+
+async def test_blank_nickname_is_refused(client: AsyncClient) -> None:
+    headers = await student(client)
+
+    response = await client.put(
+        "/v1/profile/me/basics", json={**BASICS, "nickname": "     "}, headers=headers
+    )
+
+    assert response.status_code == 422
