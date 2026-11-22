@@ -25,6 +25,8 @@ class Profile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     year: Mapped[int | None] = mapped_column(SmallInteger)
     hometown: Mapped[str | None] = mapped_column(String(60))
     looking_for: Mapped[str | None] = mapped_column(String(30))
+    # Card 6: storage key of the re-encoded photo (src/media.py). Opens only by photo swap.
+    photo_key: Mapped[str | None] = mapped_column(String(100))
     # Card 7, optional and sealed: never part of what others see until the contact swap.
     contact_kind: Mapped[str | None] = mapped_column(String(20))
     contact_value: Mapped[str | None] = mapped_column(String(40))
