@@ -72,3 +72,20 @@ class Card(StrEnum):
 
 SHOWABLE_CARDS = (Card.FIRST_NAME, Card.BRANCH, Card.HOMETOWN, Card.LOOKING_FOR, Card.VOICE)
 DEFAULT_SHOWN = [Card.HOMETOWN, Card.LOOKING_FOR]
+# Cards other students see on a profile. Voice joins once voice notes exist.
+PUBLIC_CARDS = (
+    Card.FIRST_NAME, Card.BRANCH, Card.HOMETOWN, Card.LOOKING_FOR, Card.PHOTO, Card.CONTACT,
+)  # fmt: skip
+
+# Whose "Interested in" includes someone of this gender. Audience filters apply both ways.
+WANTED_BY = {
+    Gender.WOMAN: (InterestedIn.WOMEN, InterestedIn.EVERYONE),
+    Gender.MAN: (InterestedIn.MEN, InterestedIn.EVERYONE),
+    Gender.NONBINARY: (InterestedIn.EVERYONE,),
+}
+# The genders someone wants to see.
+WANTS = {
+    InterestedIn.WOMEN: (Gender.WOMAN,),
+    InterestedIn.MEN: (Gender.MAN,),
+    InterestedIn.EVERYONE: tuple(Gender),
+}
