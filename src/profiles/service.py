@@ -75,8 +75,6 @@ async def update_preferences(session: AsyncSession, user: Me, body: PreferencesU
     profile.gender = body.gender
     profile.interested_in = body.interested_in
     profile.match_on = list(body.match_on)
-    # "Women write first" is a choice for women only; ignore it for anyone else.
-    profile.women_write_first = body.women_write_first and body.gender == c.Gender.WOMAN
     return await _save(session, user, profile)
 
 
@@ -151,7 +149,6 @@ async def _get_or_create(session: AsyncSession, user: Me) -> Profile:
         interests=[],
         shown_cards=[str(card) for card in c.DEFAULT_SHOWN],
         match_on=[],
-        women_write_first=False,
     )
     try:
         async with session.begin_nested():
@@ -194,7 +191,6 @@ def _to_mine(user: Me, profile: Profile | None, prompts: list[ProfilePrompt]) ->
         gender=c.Gender(p.gender) if p and p.gender else None,
         interested_in=c.InterestedIn(p.interested_in) if p and p.interested_in else None,
         match_on=[c.MatchOn(x) for x in p.match_on] if p else [],
-        women_write_first=p.women_write_first if p else False,
         basics_done=basics_done,
         prompts_done=prompts_done,
         cards_done=cards_done,
