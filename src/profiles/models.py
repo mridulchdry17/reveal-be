@@ -20,11 +20,14 @@ class Profile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     nickname: Mapped[str | None] = mapped_column(String(30))
     vibe: Mapped[str | None] = mapped_column(String(30))
     interests: Mapped[list[str]] = mapped_column(ARRAY(String(24)), default=list)
-    # Screen 3: card contents and which cards are shown without a swap
+    # Screen 3: card contents
     branch: Mapped[str | None] = mapped_column(String(40))
     year: Mapped[int | None] = mapped_column(SmallInteger)
     hometown: Mapped[str | None] = mapped_column(String(60))
     looking_for: Mapped[str | None] = mapped_column(String(30))
+    # Card 7, optional and sealed: never part of what others see until the contact swap.
+    contact_kind: Mapped[str | None] = mapped_column(String(20))
+    contact_value: Mapped[str | None] = mapped_column(String(40))
     # Screen 4
     gender: Mapped[str | None] = mapped_column(String(20))
     interested_in: Mapped[str | None] = mapped_column(String(20))
