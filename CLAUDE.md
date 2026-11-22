@@ -42,9 +42,11 @@ src/
   admin/               review queue, approve/reject, let someone in, action log
   profiles/            basics, 3 prompts, 7 cards, preferences; what others may see; drop audience
   drops/               tonight's drop: 5 profiles a night at 9 PM, like a prompt or pass
-  matches/             likes (Likes list, match back, pass) and matches
+  matches/             likes (Likes list, match back, pass), matches, unmatch
+  chats/               messages between matched students, Chats tab list, unread state
+  safety/              block and report (both end the match); reports listed for admins
   clock.py             now() as a dependency, so tests can set the time
-  <domain>/            planned: chats, swaps, guess, safety, notifications, moderation
+  <domain>/            planned: swaps, guess, notifications, moderation
     router.py          HTTP only: parse, call service, return schema
     schemas.py         Pydantic request/response models
     models.py          SQLAlchemy tables
@@ -97,6 +99,7 @@ These are the reason the product exists. Every one needs a test, and a change th
 - Migrations are reviewed, reversible, never edited after merge. No data backfills inside schema migrations.
 - Anything that must survive a crash or retry (push, image processing) is an Arq job, not `BackgroundTasks`. Exception for now: the drop is built on the first `GET /v1/drops/tonight` after 9 PM and saved (`drop_item`), under a per-viewer advisory lock, and tops up while it has fewer than 5. No Redis/worker until push needs a 9 PM job; `drops.service` stays the one place that picks who's in a drop.
 - Drops and likes: `drops.service` asks `profiles.service.drop_candidates` (audience both ways, best fit first) and excludes anyone shown in the last 14 days, ever liked or passed, or with a like either way (`matches.service.connected_ids`). Liking copies the prompt text into `profile_like`; a like back (from the Likes list or the other's drop) creates one `match` row per pair. Passing is silent: the liker is never told. Use `src.clock.now` for the time, never `datetime.now()` in services.
+- Chats: messages live in Postgres (`message`), one table per pair via `match`. Every chat or safety action starts with `matches.service.live_match(user, match_id)`, which treats "not yours", "never existed" and "ended" the same (404). Unmatch, block and report call `matches.service.end` (sets `ended_at`, doesn't commit) so a match ends for both at once; the rows stay for reports. Message text goes through `CleanText` (no numbers, handles, links) until contact swaps exist. Unread = their latest message isn't my `chat_read.last_read_message_id`. The app polls `GET /v1/chats/{id}` every few seconds; no WebSockets yet.
 - Every route sets `response_model` and `status_code`, and lists its error responses with `ErrorResponse`. API docs are off outside `local` and `staging`.
 - Product routes live under `/v1`. A breaking change ships as a new version next to the old one, because installed PWAs keep old code cached.
 - Tables use `UUIDPrimaryKeyMixin` + `TimestampMixin`. Never expose sequential ids.
