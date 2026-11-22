@@ -21,3 +21,17 @@ class PhotoTooLarge(DomainError):
 class NotAPhoto(DomainError):
     status_code = 422
     code = "not_a_photo"
+
+
+class VoiceNoteNotFound(NotFound):
+    code = "voice_note_not_found"
+
+
+class VoiceNoteTooLarge(DomainError):
+    status_code = 413
+    code = "voice_note_too_large"
+
+
+class NotAVoiceNote(DomainError):
+    status_code = 422
+    code = "not_a_voice_note"

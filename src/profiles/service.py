@@ -12,13 +12,16 @@ from src.auth import service as auth_service
 from src.auth.schemas import Me
 from src.config import settings
 from src.profiles import constants as c
-from src.profiles import photo, repository
+from src.profiles import photo, repository, voice
 from src.profiles.exceptions import (
     NotAPhoto,
+    NotAVoiceNote,
     PhotoNotFound,
     PhotoTooLarge,
     ProfileIncomplete,
     PromptNotFound,
+    VoiceNoteNotFound,
+    VoiceNoteTooLarge,
 )
 from src.profiles.models import Profile, ProfilePrompt
 from src.profiles.schemas import (
@@ -125,6 +128,49 @@ async def remove_photo(session: AsyncSession, user: Me) -> MyProfile:
     profile = await _get_or_create(session, user)
     old_key = profile.photo_key
     profile.photo_key = None
+    mine = await _save(session, user, profile)
+    if old_key:
+        await media.delete(old_key)
+    return mine
+
+
+async def update_voice(session: AsyncSession, user: Me, data: bytes, seconds: int) -> MyProfile:
+    """Card 5, optional. Stored privately as recorded; the old note is deleted once saved."""
+    if len(data) > settings.voice_note_max_bytes:
+        raise VoiceNoteTooLarge("That voice note is too long")
+    kind = voice.detect_audio_type(data)
+    if kind is None:
+        raise NotAVoiceNote("That file isn't a voice note")
+    profile = await _get_or_create(session, user)
+    old_key = profile.voice_key
+    key = f"voice/{user.id}/{secrets.token_hex(16)}.{kind}"
+    await media.put(key, data, voice.VOICE_TYPES[kind])
+    profile.voice_key = key
+    profile.voice_type = kind
+    profile.voice_seconds = seconds
+    mine = await _save(session, user, profile)
+    if old_key:
+        await media.delete(old_key)
+    return mine
+
+
+async def my_voice(session: AsyncSession, user: Me) -> tuple[bytes, str]:
+    """The owner's own voice note and its MIME type. Others hear it only after a swap."""
+    profile = await repository.get_for_user(session, user.id)
+    if profile is None or not profile.voice_key or not profile.voice_type:
+        raise VoiceNoteNotFound("No voice note yet")
+    data = await media.get(profile.voice_key)
+    if data is None:
+        raise VoiceNoteNotFound("No voice note yet")
+    return data, voice.VOICE_TYPES[profile.voice_type]
+
+
+async def remove_voice(session: AsyncSession, user: Me) -> MyProfile:
+    profile = await _get_or_create(session, user)
+    old_key = profile.voice_key
+    profile.voice_key = None
+    profile.voice_type = None
+    profile.voice_seconds = None
     mine = await _save(session, user, profile)
     if old_key:
         await media.delete(old_key)
@@ -247,6 +293,7 @@ def _to_mine(user: Me, profile: Profile | None, prompts: list[ProfilePrompt]) ->
         year=p.year if p else None,
         hometown=p.hometown if p else None,
         looking_for=c.LookingFor(p.looking_for) if p and p.looking_for else None,
+        voice_seconds=p.voice_seconds if p and p.voice_key else None,
         has_photo=bool(p and p.photo_key),
         contact=(
             Contact.model_construct(kind=c.ContactKind(p.contact_kind), value=p.contact_value)
@@ -265,7 +312,8 @@ def _to_mine(user: Me, profile: Profile | None, prompts: list[ProfilePrompt]) ->
 
 
 def _to_public(p: Profile, full_name: str, prompts: list[ProfilePrompt]) -> PublicProfile:
-    shown = [card for card in c.PUBLIC_CARDS if card in c.SHOWN_CARDS]
+    cards = [card for card in c.PUBLIC_CARDS if card != c.Card.VOICE or p.voice_key]
+    shown = [card for card in cards if card in c.SHOWN_CARDS]
     return PublicProfile(
         nickname=p.nickname or "",
         vibe=p.vibe or "",
@@ -279,5 +327,5 @@ def _to_public(p: Profile, full_name: str, prompts: list[ProfilePrompt]) -> Publ
             c.LookingFor(p.looking_for) if c.Card.LOOKING_FOR in shown and p.looking_for else None
         ),
         shown_cards=shown,
-        hidden_cards=[card for card in c.PUBLIC_CARDS if card not in shown],
+        hidden_cards=[card for card in cards if card not in shown],
     )

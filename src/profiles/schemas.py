@@ -128,6 +128,9 @@ class MyProfile(BaseModel):
     year: int | None
     hometown: str | None
     looking_for: c.LookingFor | None
+    voice_seconds: int | None = Field(
+        description="Card 5, optional; fetch it with GET /v1/profile/me/voice"
+    )
     has_photo: bool = Field(description="Card 6; fetch it with GET /v1/profile/me/photo")
     contact: Contact | None = Field(description="Card 7, optional; only ever shown to its owner")
     gender: c.Gender | None

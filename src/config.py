@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     media_container: str = "local"
     media_dir: str = "var/media"
     profile_photo_max_bytes: int = 8_000_000
+    voice_note_max_bytes: int = 1_000_000
     media_uploads_per_ip_per_hour: int = 30
 
     @property
