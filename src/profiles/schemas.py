@@ -1,20 +1,24 @@
 import uuid
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, Field, field_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, field_validator
 
 from src.profiles import constants as c
 from src.profiles.text_rules import CONTACT_INFO_MESSAGE, has_contact_info
 
 
+def _collapse_spaces(value: object) -> object:
+    # Before the length checks, so "   " counts as empty.
+    return " ".join(value.split()) if isinstance(value, str) else value
+
+
 def _no_contact_info(value: str) -> str:
-    value = " ".join(value.split())
     if has_contact_info(value):
         raise ValueError(CONTACT_INFO_MESSAGE)
     return value
 
 
-CleanText = Annotated[str, AfterValidator(_no_contact_info)]
+CleanText = Annotated[str, BeforeValidator(_collapse_spaces), AfterValidator(_no_contact_info)]
 
 
 class BasicsUpdate(BaseModel):

@@ -51,3 +51,19 @@ class Clock:
 
     def __call__(self) -> datetime:
         return self.at
+
+
+async def matched_pair(client: AsyncClient) -> tuple[dict[str, str], dict[str, str], str]:
+    """Aanya and Kabir, matched: she liked his prompt, he liked her back. Returns match id."""
+    aanya = await finished(client, "Aanya", "woman", "men")
+    kabir = await finished(client, "Kabir", "man", "women")
+    item = (await drop(client, aanya))["items"][0]
+    await client.post(
+        f"/v1/drops/tonight/{item['id']}/like",
+        json={"prompt_id": item["profile"]["prompts"][0]["id"]},
+        headers=aanya,
+    )
+    like_id = (await client.get("/v1/likes", headers=kabir)).json()[0]["id"]
+    await client.post(f"/v1/likes/{like_id}/match", headers=kabir)
+    chats = (await client.get("/v1/chats", headers=aanya)).json()
+    return aanya, kabir, chats[0]["match_id"]

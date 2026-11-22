@@ -11,3 +11,9 @@ class AlreadyLiked(Conflict):
 
 class LikeAlreadyAnswered(Conflict):
     code = "like_already_answered"
+
+
+class MatchNotFound(NotFound):
+    """Not yours, never existed, or ended: all look the same."""
+
+    code = "match_not_found"

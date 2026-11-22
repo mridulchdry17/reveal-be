@@ -53,3 +53,16 @@ async def match_back(like_id: uuid.UUID, user: Student, session: Session, at: No
 )
 async def pass_like(like_id: uuid.UUID, user: Student, session: Session, at: Now) -> None:
     await service.pass_like(session, user, like_id, at)
+
+
+matches_router = APIRouter(prefix="/matches", tags=["matches"])
+
+
+@matches_router.post(
+    "/{match_id}/unmatch",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="End a match for both of you. The chat closes",
+    responses={**_ERRORS, 404: {"model": ErrorResponse, "description": "No such live match"}},
+)
+async def unmatch(match_id: uuid.UUID, user: Student, session: Session, at: Now) -> None:
+    await service.unmatch(session, user, match_id, at)
