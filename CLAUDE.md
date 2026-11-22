@@ -22,7 +22,7 @@ A change is done when `ruff`, `pyright` and `pytest` all pass. Show the command 
 
 Installed: Python 3.12, uv, FastAPI, Pydantic v2 + pydantic-settings, SQLAlchemy 2 async (`AsyncSession`) + asyncpg, PostgreSQL 17, Alembic, pytest + pytest-asyncio + `httpx.AsyncClient(transport=ASGITransport(app))`, Ruff, Pyright.
 
-Planned, add with the feature that first needs it (not before): Redis + Arq for jobs (nightly drop, push fan-out), pywebpush (VAPID) for notifications, S3-compatible private bucket for photos and voice notes.
+Also installed: Pillow (re-encoding photos). Planned, add with the feature that first needs it (not before): Redis + Arq for jobs (nightly drop, push fan-out), pywebpush (VAPID) for notifications.
 
 ## Layout: by domain, not by file type
 
@@ -34,6 +34,7 @@ src/
   exceptions.py        DomainError family + the one HTTP handler
   schemas.py           ErrorResponse (shape of every error)
   security.py          require_admin, RateLimiter / limit_by_ip
+  media.py             private profile files (photos, voice): Azure Blob via managed identity on servers, a folder locally
   enrollment.py        normalize() / is_valid(): the only enrollment-number rules
   health/              smallest example of the layers
   waitlist/            first product domain: copy its shape for new ones
@@ -109,6 +110,7 @@ These are the reason the product exists. Every one needs a test, and a change th
 - Student verification lives on `user_account` (`verified_via`, `verified_at`, `college_email`); other domains set it only through `auth.service`. College email: `POST /v1/auth/college-email` takes a credential for the user's college Google account and trusts only Google's `hd` claim (`settings.college_domain`), never the address alone. Signing in with a college account verifies straight away.
 - ID card verification: `POST /v1/verification/id-card` (multipart selfie + id_card) stores both photos as files in `settings.verification_photos_dir` (mode 600, random names, type checked from the bytes) and a `verification_request` row. Photos are deleted on review and after `verification_photo_days` unreviewed (swept on each upload). On servers the folder is `/var/lib/reveal/<env>/verification`, outside the checkout, so deploys never touch it. Never serve that folder; admins read photos only through the API.
 - Product endpoints use `verified_user` (signed in and verified). Profiles: `/v1/profile/me` plus one PUT per profile screen; free text that others see goes through `profiles.text_rules.has_contact_info` (numbers, handles, links belong on card 7). Choices live in `profiles/constants.py` and reach the frontend via `GET /v1/profile/options`.
+- Profile photo (card 6): `PUT /v1/profile/me/photo` re-encodes with Pillow in a threadpool (`profiles/photo.py`: real image only, upright, EXIF/GPS dropped, ≤1600px JPEG) and stores it via `src/media.py` under a random key; the owner reads it back with `GET /v1/profile/me/photo` (no-store). Nobody else gets the photo or its key; pieces for matches come with swaps. `media.py` talks to Azure Blob over REST with a managed-identity token (no storage keys, no Azure SDK: the VM is small); container per environment (`MEDIA_CONTAINER`). Tests and local dev use `settings.media_dir`.
 - Admin (`/v1/admin/*`, `admin_user`): approve/reject a review (photos deleted after commit), let a signed-in account in by email, and every decision lands in `admin_action`. Decisions span domains in one transaction: `verification.service.decide` and `auth.service.mark_verified` don't commit; `admin.service` does.
 - Never log PII: no names, enrollment numbers, phone numbers, message text or image URLs. Log user ids.
 - Config only via `src/config.py` settings. No `os.environ` reads elsewhere. No secrets in the repo; `.env.example` lists keys only.
