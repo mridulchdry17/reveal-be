@@ -67,14 +67,6 @@ class CardsUpdate(BaseModel):
     year: int = Field(ge=1, le=5, description="Year of study, 1 = first-year")
     hometown: CleanText = Field(min_length=2, max_length=60)
     looking_for: c.LookingFor
-    shown_cards: list[c.Card] = Field(description="Cards shown without a swap")
-
-    @field_validator("shown_cards")
-    @classmethod
-    def _only_showable(cls, value: list[c.Card]) -> list[c.Card]:
-        if any(card not in c.SHOWABLE_CARDS for card in value):
-            raise ValueError("Photo and contact open only through swaps")
-        return list(dict.fromkeys(value))
 
 
 class PreferencesUpdate(BaseModel):
@@ -101,7 +93,6 @@ class MyProfile(BaseModel):
     year: int | None
     hometown: str | None
     looking_for: c.LookingFor | None
-    shown_cards: list[c.Card]
     gender: c.Gender | None
     interested_in: c.InterestedIn | None
     match_on: list[c.MatchOn]

@@ -66,7 +66,6 @@ async def update_cards(session: AsyncSession, user: Me, body: CardsUpdate) -> My
     profile.year = body.year
     profile.hometown = body.hometown
     profile.looking_for = body.looking_for
-    profile.shown_cards = list(body.shown_cards)
     return await _save(session, user, profile)
 
 
@@ -109,8 +108,8 @@ async def public_profiles(
 ) -> dict[uuid.UUID, PublicProfile]:
     """What this viewer may see of each owner. The one place that decides visibility.
 
-    Today a card is visible only if its owner shows it; swaps will open more per pair,
-    which is why the viewer is passed in. Incomplete profiles are left out.
+    Everyone has the same layout (constants.SHOWN_CARDS); swaps will open more per
+    pair, which is why the viewer is passed in. Incomplete profiles are left out.
     """
     profiles = [p for p in await repository.get_for_users(session, owner_ids) if p.completed_at]
     if not profiles:
@@ -147,7 +146,6 @@ async def _get_or_create(session: AsyncSession, user: Me) -> Profile:
     profile = Profile(
         user_id=user.id,
         interests=[],
-        shown_cards=[str(card) for card in c.DEFAULT_SHOWN],
         match_on=[],
     )
     try:
@@ -187,7 +185,6 @@ def _to_mine(user: Me, profile: Profile | None, prompts: list[ProfilePrompt]) ->
         year=p.year if p else None,
         hometown=p.hometown if p else None,
         looking_for=c.LookingFor(p.looking_for) if p and p.looking_for else None,
-        shown_cards=[c.Card(x) for x in p.shown_cards] if p else list(c.DEFAULT_SHOWN),
         gender=c.Gender(p.gender) if p and p.gender else None,
         interested_in=c.InterestedIn(p.interested_in) if p and p.interested_in else None,
         match_on=[c.MatchOn(x) for x in p.match_on] if p else [],
@@ -200,7 +197,7 @@ def _to_mine(user: Me, profile: Profile | None, prompts: list[ProfilePrompt]) ->
 
 
 def _to_public(p: Profile, full_name: str, prompts: list[ProfilePrompt]) -> PublicProfile:
-    shown = [card for card in c.PUBLIC_CARDS if card in p.shown_cards]
+    shown = [card for card in c.PUBLIC_CARDS if card in c.SHOWN_CARDS]
     return PublicProfile(
         nickname=p.nickname or "",
         vibe=p.vibe or "",

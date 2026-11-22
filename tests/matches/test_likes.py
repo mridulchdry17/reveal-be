@@ -48,7 +48,7 @@ async def test_a_like_reaches_them_with_the_prompt_and_comment(client: AsyncClie
     assert received["prompt_answer"] == "Maggi is a full meal"
     assert received["comment"] == "Maggi at 2am?"
     assert received["profile"]["nickname"] == "Aanya nick"
-    assert received["profile"]["first_name"] is None  # Aanya hides her name
+    assert received["profile"]["first_name"] is None  # names open only by swap
 
 
 async def test_liked_item_is_marked_and_cannot_be_answered_twice(client: AsyncClient) -> None:
