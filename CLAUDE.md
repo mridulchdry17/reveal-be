@@ -40,7 +40,8 @@ src/
   auth/                Google sign-in, bearer sessions (hashed), current_user / admin_user
   verification/        ID card + selfie review requests; photos as files (storage.py)
   admin/               review queue, approve/reject, let someone in, action log
-  <domain>/            planned: profiles, drops, matches,
+  profiles/            the owner's profile: basics, 3 prompts, 7 cards, preferences
+  <domain>/            planned: drops, matches,
                        chats, swaps, guess, safety, notifications, moderation
     router.py          HTTP only: parse, call service, return schema
     schemas.py         Pydantic request/response models
@@ -101,6 +102,7 @@ These are the reason the product exists. Every one needs a test, and a change th
 - Sign-in: the frontend sends Google's ID token to `POST /v1/auth/google`; we verify it with `google-auth` and return an opaque session token (stored only as SHA-256). Any Google account can sign in; being a verified student is a separate step. Tests override `get_google_verifier`, never call Google.
 - Student verification lives on `user_account` (`verified_via`, `verified_at`, `college_email`); other domains set it only through `auth.service`. College email: `POST /v1/auth/college-email` takes a credential for the user's college Google account and trusts only Google's `hd` claim (`settings.college_domain`), never the address alone. Signing in with a college account verifies straight away.
 - ID card verification: `POST /v1/verification/id-card` (multipart selfie + id_card) stores both photos as files in `settings.verification_photos_dir` (mode 600, random names, type checked from the bytes) and a `verification_request` row. Photos are deleted on review and after `verification_photo_days` unreviewed (swept on each upload). On servers the folder is `/var/lib/reveal/<env>/verification`, outside the checkout, so deploys never touch it. Never serve that folder; admins read photos only through the API.
+- Product endpoints use `verified_user` (signed in and verified). Profiles: `/v1/profile/me` plus one PUT per profile screen; free text that others see goes through `profiles.text_rules.has_contact_info` (numbers, handles, links belong on card 7). Choices live in `profiles/constants.py` and reach the frontend via `GET /v1/profile/options`.
 - Admin (`/v1/admin/*`, `admin_user`): approve/reject a review (photos deleted after commit), let a signed-in account in by email, and every decision lands in `admin_action`. Decisions span domains in one transaction: `verification.service.decide` and `auth.service.mark_verified` don't commit; `admin.service` does.
 - Never log PII: no names, enrollment numbers, phone numbers, message text or image URLs. Log user ids.
 - Config only via `src/config.py` settings. No `os.environ` reads elsewhere. No secrets in the repo; `.env.example` lists keys only.
