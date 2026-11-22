@@ -1,12 +1,14 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import verified_user
 from src.auth.schemas import Me
+from src.config import settings
 from src.database import get_session
 from src.profiles import service
+from src.profiles.dependencies import limit_media_uploads
 from src.profiles.schemas import (
     BasicsUpdate,
     CardsUpdate,
@@ -72,6 +74,56 @@ async def update_prompts(body: PromptsUpdate, user: Student, session: Session) -
 )
 async def update_cards(body: CardsUpdate, user: Student, session: Session) -> MyProfile:
     return await service.update_cards(session, user, body)
+
+
+@router.put(
+    "/me/photo",
+    response_model=MyProfile,
+    status_code=status.HTTP_200_OK,
+    summary="Card 6: my photo, private until the photo swap",
+    dependencies=[Depends(limit_media_uploads)],
+    responses={
+        **_ERRORS,
+        413: {"model": ErrorResponse, "description": "Photo too large"},
+        422: {"model": ErrorResponse, "description": "Not a JPEG, PNG or WebP photo"},
+        429: {"model": ErrorResponse, "description": "Too many uploads"},
+    },
+)
+async def update_photo(
+    photo: Annotated[UploadFile, File(description="JPEG, PNG or WebP")],
+    user: Student,
+    session: Session,
+) -> MyProfile:
+    # One byte past the limit lets the service tell "too large" without reading it all.
+    data = await photo.read(settings.profile_photo_max_bytes + 1)
+    return await service.update_photo(session, user, data)
+
+
+@router.get(
+    "/me/photo",
+    response_class=Response,
+    status_code=status.HTTP_200_OK,
+    summary="My own photo (JPEG, never cached)",
+    responses={
+        **_ERRORS,
+        200: {"content": {"image/jpeg": {}}, "description": "The photo"},
+        404: {"model": ErrorResponse, "description": "No photo yet"},
+    },
+)
+async def my_photo(user: Student, session: Session) -> Response:
+    data = await service.my_photo(session, user)
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-store, private"})
+
+
+@router.delete(
+    "/me/photo",
+    response_model=MyProfile,
+    status_code=status.HTTP_200_OK,
+    summary="Remove my photo",
+    responses=_ERRORS,
+)
+async def remove_photo(user: Student, session: Session) -> MyProfile:
+    return await service.remove_photo(session, user)
 
 
 @router.put(
