@@ -32,7 +32,11 @@ class Like(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class Match(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Two students who liked each other. Stored once per pair, smaller id first."""
+    """Two students who liked each other. Stored once per pair, smaller id first.
+
+    Unmatch, block and report end it for both. The row stays (reports point at it), but an
+    ended match is gone from both sides: no chat, no list entry.
+    """
 
     __tablename__ = "match"
     __table_args__ = (
@@ -43,4 +47,8 @@ class Match(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     user_a_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_account.id", ondelete="CASCADE"))
     user_b_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("user_account.id", ondelete="CASCADE"), index=True
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ended_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_account.id", ondelete="SET NULL")
     )

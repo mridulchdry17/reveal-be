@@ -8,9 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.schemas import Me
 from src.matches import repository
 from src.matches.constants import LikeStatus
-from src.matches.exceptions import AlreadyLiked, LikeAlreadyAnswered, LikeNotFound
-from src.matches.models import Like
-from src.matches.schemas import ReceivedLike
+from src.matches.exceptions import AlreadyLiked, LikeAlreadyAnswered, LikeNotFound, MatchNotFound
+from src.matches.models import Like, Match
+from src.matches.schemas import MatchInfo, ReceivedLike
 from src.profiles import service as profile_service
 from src.profiles.schemas import PromptOut
 
@@ -53,6 +53,41 @@ async def send_like(
     if status == LikeStatus.MATCHED:
         await repository.add_match(session, *sorted((from_user_id, to_user_id)))
     return status == LikeStatus.MATCHED
+
+
+async def live_matches(session: AsyncSession, user_id: uuid.UUID) -> list[MatchInfo]:
+    return [_info(m, user_id) for m in await repository.live_matches(session, user_id)]
+
+
+async def live_match(session: AsyncSession, user_id: uuid.UUID, match_id: uuid.UUID) -> MatchInfo:
+    """One of my live matches, or MatchNotFound. Every chat and safety action starts here."""
+    match = await repository.live_match(session, user_id, match_id)
+    if match is None:
+        raise MatchNotFound
+    return _info(match, user_id)
+
+
+async def end(
+    session: AsyncSession, user_id: uuid.UUID, match_id: uuid.UUID, now: datetime
+) -> MatchInfo:
+    """End a match for both people. Doesn't commit: block and report end it in their own
+    transaction. With swaps, this is also where everything opened between them closes."""
+    match = await repository.live_match(session, user_id, match_id)
+    if match is None:
+        raise MatchNotFound
+    match.ended_at = now
+    match.ended_by_id = user_id
+    return _info(match, user_id)
+
+
+async def unmatch(session: AsyncSession, user: Me, match_id: uuid.UUID, now: datetime) -> None:
+    await end(session, user.id, match_id, now)
+    await session.commit()
+
+
+def _info(match: Match, user_id: uuid.UUID) -> MatchInfo:
+    other = match.user_b_id if match.user_a_id == user_id else match.user_a_id
+    return MatchInfo(id=match.id, other_user_id=other, matched_at=match.created_at)
 
 
 async def connected_ids(session: AsyncSession, user_id: uuid.UUID) -> list[uuid.UUID]:

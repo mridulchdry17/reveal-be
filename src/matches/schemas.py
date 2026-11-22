@@ -6,6 +6,14 @@ from pydantic import BaseModel
 from src.profiles.schemas import PublicProfile
 
 
+class MatchInfo(BaseModel):
+    """One of my live matches, as other domains (chat, safety) see it."""
+
+    id: uuid.UUID
+    other_user_id: uuid.UUID
+    matched_at: datetime
+
+
 class ReceivedLike(BaseModel):
     """Someone who liked me and is waiting for an answer."""
 

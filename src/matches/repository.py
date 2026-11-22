@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,6 +40,23 @@ async def add_match(session: AsyncSession, user_a_id: uuid.UUID, user_b_id: uuid
         .values(id=uuid.uuid4(), user_a_id=user_a_id, user_b_id=user_b_id)
         .on_conflict_do_nothing(index_elements=["user_a_id", "user_b_id"])
     )
+
+
+def _mine(user_id: uuid.UUID):
+    return and_(
+        or_(Match.user_a_id == user_id, Match.user_b_id == user_id), Match.ended_at.is_(None)
+    )
+
+
+async def live_matches(session: AsyncSession, user_id: uuid.UUID) -> list[Match]:
+    rows = await session.scalars(select(Match).where(_mine(user_id)))
+    return list(rows)
+
+
+async def live_match(
+    session: AsyncSession, user_id: uuid.UUID, match_id: uuid.UUID
+) -> Match | None:
+    return await session.scalar(select(Match).where(Match.id == match_id, _mine(user_id)))
 
 
 async def connected_ids(session: AsyncSession, user_id: uuid.UUID) -> list[uuid.UUID]:
