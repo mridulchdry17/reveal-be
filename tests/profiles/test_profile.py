@@ -182,3 +182,64 @@ async def test_blank_nickname_is_refused(client: AsyncClient) -> None:
     )
 
     assert response.status_code == 422
+
+
+async def test_contact_is_saved_cleaned_up_and_only_shown_to_me(client: AsyncClient) -> None:
+    headers = await student(client)
+
+    url = "/v1/profile/me/contact"
+    insta_body = {"kind": "instagram", "value": " @Aanya.Reads "}
+    insta = await client.put(url, json=insta_body, headers=headers)
+    phone_body = {"kind": "phone", "value": "+91 98765-43210"}
+    phone = await client.put(url, json=phone_body, headers=headers)
+
+    assert insta.status_code == 200
+    assert insta.json()["contact"] == {"kind": "instagram", "value": "aanya.reads"}
+    assert phone.json()["contact"] == {"kind": "phone", "value": "9876543210"}
+    me = (await client.get("/v1/profile/me", headers=headers)).json()
+    assert me["contact"] == {"kind": "phone", "value": "9876543210"}
+
+
+@pytest.mark.parametrize(
+    ("kind", "value"),
+    [
+        ("instagram", "has space"),
+        ("instagram", "a..b"),
+        ("phone", "12345"),
+        ("phone", "5876543210"),
+    ],
+)
+async def test_bad_contact_is_refused_on_the_field(
+    client: AsyncClient, kind: str, value: str
+) -> None:
+    headers = await student(client)
+
+    response = await client.put(
+        "/v1/profile/me/contact", json={"kind": kind, "value": value}, headers=headers
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "value"]
+
+
+async def test_contact_can_be_removed(client: AsyncClient) -> None:
+    headers = await student(client)
+    await client.put(
+        "/v1/profile/me/contact", json={"kind": "instagram", "value": "aanya"}, headers=headers
+    )
+
+    response = await client.delete("/v1/profile/me/contact", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["contact"] is None
+
+
+async def test_contact_is_optional_for_a_complete_profile(client: AsyncClient) -> None:
+    headers = await student(client)
+    for path, body in [
+        ("basics", BASICS), ("prompts", PROMPTS), ("cards", CARDS), ("preferences", PREFERENCES)
+    ]:  # fmt: skip
+        response = await client.put(f"/v1/profile/me/{path}", json=body, headers=headers)
+
+    assert response.json()["complete"] is True
+    assert response.json()["contact"] is None

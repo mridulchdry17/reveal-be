@@ -40,7 +40,7 @@ src/
   auth/                Google sign-in, bearer sessions (hashed), current_user / admin_user
   verification/        ID card + selfie review requests; photos as files (storage.py)
   admin/               review queue, approve/reject, let someone in, action log
-  profiles/            basics, 3 prompts, 7 cards, preferences; what others may see; drop audience
+  profiles/            basics, 3 prompts, 7 cards, contact (card 7), preferences; what others may see; drop audience
   drops/               tonight's drop: 5 profiles a night at 9 PM, like a prompt or pass
   matches/             likes (Likes list, match back, pass), matches, unmatch
   chats/               messages between matched students, Chats tab list, unread state
