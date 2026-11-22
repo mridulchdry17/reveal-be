@@ -127,3 +127,23 @@ class ProfileOptions(BaseModel):
     prompt_answer_max: int
     nickname_suggestions: list[str]
     looking_for: list[Option]
+
+
+class PublicProfile(BaseModel):
+    """Another student's profile as one viewer may see it.
+
+    Built only by profiles.service.public_profiles. A hidden card's value is null here,
+    never sent and hidden by the app.
+    """
+
+    nickname: str
+    vibe: str
+    interests: list[str]
+    prompts: list[PromptOut]
+    first_name: str | None
+    branch: str | None
+    year: int | None = Field(description="Part of the branch card")
+    hometown: str | None
+    looking_for: c.LookingFor | None
+    shown_cards: list[c.Card]
+    hidden_cards: list[c.Card]
