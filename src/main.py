@@ -3,12 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.admin.router import router as admin_router
 from src.auth.router import router as auth_router
+from src.chats.router import router as chats_router
 from src.config import settings
 from src.drops.router import router as drops_router
 from src.exceptions import DomainError, domain_error_handler
 from src.health.router import router as health_router
-from src.matches.router import router as matches_router
+from src.matches.router import matches_router
+from src.matches.router import router as likes_router
 from src.profiles.router import router as profiles_router
+from src.safety.router import router as safety_router
 from src.verification.router import router as verification_router
 from src.waitlist.router import router as waitlist_router
 
@@ -35,7 +38,10 @@ def create_app() -> FastAPI:
     app.include_router(admin_router, prefix=API_V1)
     app.include_router(auth_router, prefix=API_V1)
     app.include_router(drops_router, prefix=API_V1)
+    app.include_router(likes_router, prefix=API_V1)
     app.include_router(matches_router, prefix=API_V1)
+    app.include_router(chats_router, prefix=API_V1)
+    app.include_router(safety_router, prefix=API_V1)
     app.include_router(profiles_router, prefix=API_V1)
     app.include_router(verification_router, prefix=API_V1)
     app.include_router(waitlist_router, prefix=API_V1)
