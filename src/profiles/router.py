@@ -10,6 +10,7 @@ from src.profiles import service
 from src.profiles.schemas import (
     BasicsUpdate,
     CardsUpdate,
+    Contact,
     MyProfile,
     PreferencesUpdate,
     ProfileOptions,
@@ -66,11 +67,33 @@ async def update_prompts(body: PromptsUpdate, user: Student, session: Session) -
     "/me/cards",
     response_model=MyProfile,
     status_code=status.HTTP_200_OK,
-    summary="Card contents and which are shown without a swap",
+    summary="Card contents",
     responses=_SAVE_ERRORS,
 )
 async def update_cards(body: CardsUpdate, user: Student, session: Session) -> MyProfile:
     return await service.update_cards(session, user, body)
+
+
+@router.put(
+    "/me/contact",
+    response_model=MyProfile,
+    status_code=status.HTTP_200_OK,
+    summary="Card 7: Instagram or phone, sealed until the contact swap",
+    responses=_SAVE_ERRORS,
+)
+async def update_contact(body: Contact, user: Student, session: Session) -> MyProfile:
+    return await service.update_contact(session, user, body)
+
+
+@router.delete(
+    "/me/contact",
+    response_model=MyProfile,
+    status_code=status.HTTP_200_OK,
+    summary="Remove card 7",
+    responses=_ERRORS,
+)
+async def remove_contact(user: Student, session: Session) -> MyProfile:
+    return await service.remove_contact(session, user)
 
 
 @router.put(

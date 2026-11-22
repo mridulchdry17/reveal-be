@@ -51,6 +51,13 @@ LOOKING_FOR_LABELS = {
 }
 
 
+class ContactKind(StrEnum):
+    """Card 7. Opens only through the last swap."""
+
+    INSTAGRAM = "instagram"
+    PHONE = "phone"
+
+
 class MatchOn(StrEnum):
     SHARED_INTERESTS = "shared_interests"
     SAME_HOMETOWN = "same_hometown"

@@ -1,7 +1,15 @@
+import re
 import uuid
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    Field,
+    ValidationInfo,
+    field_validator,
+)
 
 from src.profiles import constants as c
 from src.profiles.text_rules import CONTACT_INFO_MESSAGE, has_contact_info
@@ -69,6 +77,33 @@ class CardsUpdate(BaseModel):
     looking_for: c.LookingFor
 
 
+_INSTAGRAM = re.compile(r"^(?!.*\.\.)(?!\.)[a-z0-9._]{1,30}(?<!\.)$")
+_PHONE = re.compile(r"^[6-9]\d{9}$")
+
+
+class Contact(BaseModel):
+    """Card 7: an Instagram handle (no @) or a 10-digit Indian mobile number."""
+
+    kind: c.ContactKind
+    value: str = Field(max_length=40)
+
+    @field_validator("value")
+    @classmethod
+    def _normalize(cls, value: str, info: ValidationInfo) -> str:
+        raw = value.strip()
+        if info.data.get("kind") == c.ContactKind.INSTAGRAM:
+            handle = raw.removeprefix("@").lower()
+            if not _INSTAGRAM.match(handle):
+                raise ValueError("That doesn't look like an Instagram username")
+            return handle
+        digits = re.sub(r"[\s()-]", "", raw).removeprefix("+91")
+        if len(digits) == 11 and digits.startswith("0"):
+            digits = digits[1:]
+        if not _PHONE.match(digits):
+            raise ValueError("Enter a 10-digit Indian mobile number")
+        return digits
+
+
 class PreferencesUpdate(BaseModel):
     gender: c.Gender
     interested_in: c.InterestedIn
@@ -93,6 +128,7 @@ class MyProfile(BaseModel):
     year: int | None
     hometown: str | None
     looking_for: c.LookingFor | None
+    contact: Contact | None = Field(description="Card 7, optional; only ever shown to its owner")
     gender: c.Gender | None
     interested_in: c.InterestedIn | None
     match_on: list[c.MatchOn]

@@ -14,6 +14,7 @@ from src.profiles.models import Profile, ProfilePrompt
 from src.profiles.schemas import (
     BasicsUpdate,
     CardsUpdate,
+    Contact,
     MyProfile,
     Option,
     PreferencesUpdate,
@@ -66,6 +67,20 @@ async def update_cards(session: AsyncSession, user: Me, body: CardsUpdate) -> My
     profile.year = body.year
     profile.hometown = body.hometown
     profile.looking_for = body.looking_for
+    return await _save(session, user, profile)
+
+
+async def update_contact(session: AsyncSession, user: Me, body: Contact) -> MyProfile:
+    profile = await _get_or_create(session, user)
+    profile.contact_kind = body.kind
+    profile.contact_value = body.value
+    return await _save(session, user, profile)
+
+
+async def remove_contact(session: AsyncSession, user: Me) -> MyProfile:
+    profile = await _get_or_create(session, user)
+    profile.contact_kind = None
+    profile.contact_value = None
     return await _save(session, user, profile)
 
 
@@ -185,6 +200,11 @@ def _to_mine(user: Me, profile: Profile | None, prompts: list[ProfilePrompt]) ->
         year=p.year if p else None,
         hometown=p.hometown if p else None,
         looking_for=c.LookingFor(p.looking_for) if p and p.looking_for else None,
+        contact=(
+            Contact.model_construct(kind=c.ContactKind(p.contact_kind), value=p.contact_value)
+            if p and p.contact_kind and p.contact_value
+            else None
+        ),
         gender=c.Gender(p.gender) if p and p.gender else None,
         interested_in=c.InterestedIn(p.interested_in) if p and p.interested_in else None,
         match_on=[c.MatchOn(x) for x in p.match_on] if p else [],

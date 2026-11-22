@@ -158,3 +158,16 @@ async def test_drop_is_for_verified_students_only(client: AsyncClient) -> None:
     headers = await student(client, UNVERIFIED)
 
     assert (await client.get("/v1/drops/tonight", headers=headers)).status_code == 403
+
+
+async def test_contact_never_reaches_the_drop(client: AsyncClient) -> None:
+    aanya = await finished(client, "Aanya", "woman", "men")
+    kabir = await finished(client, "Kabir", "man", "women")
+    await client.put(
+        "/v1/profile/me/contact", json={"kind": "instagram", "value": "kabir.k"}, headers=kabir
+    )
+
+    response = await client.get("/v1/drops/tonight", headers=aanya)
+
+    assert "kabir.k" not in response.text
+    assert "contact" in response.json()["items"][0]["profile"]["hidden_cards"]
