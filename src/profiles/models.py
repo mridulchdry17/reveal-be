@@ -25,7 +25,6 @@ class Profile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     year: Mapped[int | None] = mapped_column(SmallInteger)
     hometown: Mapped[str | None] = mapped_column(String(60))
     looking_for: Mapped[str | None] = mapped_column(String(30))
-    shown_cards: Mapped[list[str]] = mapped_column(ARRAY(String(20)), default=list)
     # Screen 4
     gender: Mapped[str | None] = mapped_column(String(20))
     interested_in: Mapped[str | None] = mapped_column(String(20))

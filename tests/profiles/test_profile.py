@@ -27,7 +27,6 @@ CARDS = {
     "year": 2,
     "hometown": "Jaipur",
     "looking_for": "serious",
-    "shown_cards": ["hometown", "looking_for"],
 }
 PREFERENCES = {"gender": "woman", "interested_in": "men", "match_on": ["shared_interests"]}
 
@@ -58,7 +57,7 @@ async def test_new_profile_is_empty_with_first_name_from_google(client: AsyncCli
 
     assert body["first_name"] == "Aanya"
     assert body["nickname"] is None
-    assert body["shown_cards"] == ["hometown", "looking_for"]
+    assert "shown_cards" not in body
     assert body["complete"] is False
 
 
@@ -164,14 +163,15 @@ async def test_three_different_prompts_are_needed(client: AsyncClient) -> None:
     assert response.status_code == 422
 
 
-async def test_photo_and_contact_cannot_be_shown_without_a_swap(client: AsyncClient) -> None:
+async def test_old_apps_sending_shown_cards_still_save(client: AsyncClient) -> None:
     headers = await student(client)
 
     response = await client.put(
         "/v1/profile/me/cards", json={**CARDS, "shown_cards": ["photo"]}, headers=headers
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    assert "shown_cards" not in response.json()
 
 
 async def test_blank_nickname_is_refused(client: AsyncClient) -> None:

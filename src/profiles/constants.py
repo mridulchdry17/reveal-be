@@ -59,7 +59,7 @@ class MatchOn(StrEnum):
 
 
 class Card(StrEnum):
-    """The 7 cards, in order. Only the first five can be shown without a swap."""
+    """The 7 cards, in order. Everyone has the same layout: see SHOWN_CARDS."""
 
     FIRST_NAME = "first_name"
     BRANCH = "branch"
@@ -70,8 +70,8 @@ class Card(StrEnum):
     CONTACT = "contact"
 
 
-SHOWABLE_CARDS = (Card.FIRST_NAME, Card.BRANCH, Card.HOMETOWN, Card.LOOKING_FOR, Card.VOICE)
-DEFAULT_SHOWN = [Card.HOMETOWN, Card.LOOKING_FOR]
+# Shown to everyone, the same for every profile. Every other card opens only by swap.
+SHOWN_CARDS = (Card.LOOKING_FOR,)
 # Cards other students see on a profile. Voice joins once voice notes exist.
 PUBLIC_CARDS = (
     Card.FIRST_NAME, Card.BRANCH, Card.HOMETOWN, Card.LOOKING_FOR, Card.PHOTO, Card.CONTACT,

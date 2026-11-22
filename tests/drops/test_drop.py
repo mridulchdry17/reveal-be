@@ -32,30 +32,20 @@ async def test_year_does_not_limit_who_you_see(client: AsyncClient) -> None:
     assert nicknames(await drop(client, first_year)) == {"Kabir nick"}
 
 
-async def test_hidden_cards_are_never_sent(client: AsyncClient) -> None:
+async def test_everyone_has_the_same_hidden_cards(client: AsyncClient) -> None:
     aanya = await finished(client, "Aanya", "woman", "men")
-    await finished(client, "Kabir", "man", "women", shown_cards=["hometown"])
+    await finished(client, "Kabir", "man", "women", shown_cards=["first_name", "hometown"])
 
     profile = (await drop(client, aanya))["items"][0]["profile"]
 
-    assert profile["hometown"] == "Jaipur"
+    assert profile["looking_for"] == "serious"
     assert profile["first_name"] is None
     assert profile["branch"] is None
     assert profile["year"] is None
-    assert profile["looking_for"] is None
-    assert profile["shown_cards"] == ["hometown"]
-    assert profile["hidden_cards"] == ["first_name", "branch", "looking_for", "photo", "contact"]
+    assert profile["hometown"] is None
+    assert profile["shown_cards"] == ["looking_for"]
+    assert profile["hidden_cards"] == ["first_name", "branch", "hometown", "photo", "contact"]
     assert len(profile["prompts"]) == 3
-
-
-async def test_shown_name_and_branch_come_through(client: AsyncClient) -> None:
-    aanya = await finished(client, "Aanya", "woman", "men")
-    await finished(client, "Kabir", "man", "women", shown_cards=["first_name", "branch"])
-
-    profile = (await drop(client, aanya))["items"][0]["profile"]
-
-    assert profile["first_name"] == "Kabir"
-    assert (profile["branch"], profile["year"]) == ("CSE", 2)
 
 
 async def test_drop_has_at_most_five_and_stays_the_same(client: AsyncClient) -> None:

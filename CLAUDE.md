@@ -80,10 +80,10 @@ Calls go one way only: **router → service → repository → database**. A lay
 
 These are the reason the product exists. Every one needs a test, and a change that touches one needs a reviewer.
 
-1. **Visibility has one source of truth:** `profiles.service.public_profiles(viewer, owners)`. Every endpoint that returns another user's data goes through it. Never return a hidden field and rely on the frontend to hide it.
+1. **Visibility has one source of truth:** `profiles.service.public_profiles(viewer, owners)`. Every endpoint that returns another user's data goes through it. Never return a hidden field and rely on the frontend to hide it. Everyone has the same layout (`constants.SHOWN_CARDS`: looking for; plus nickname, vibe, interests, prompts); owners don't choose what's shown.
 2. **No one-sided reveal.** A hidden card opens for a pair only when both have accepted the same swap. Acceptance is one transaction that opens both sides or neither.
-3. **Order:** cards 1–5 swap in any order; photo (6) only after at least one card swap; contact (7) only after photo.
-4. **Photo pieces:** 9 per photo. Each card swap opens 2, each correct guess opens 1, the photo swap opens all. Pieces are cut and watermarked per viewer on the server; the full image never leaves the server before the photo swap.
+3. **Order:** cards 1–5 swap in any order (voice only if both have a voice note; it's optional); photo (6) only after at least one card swap; contact (7) only after photo.
+4. **Photo pieces:** 9 per photo; at most 6 open before the photo swap, and the face is always in the last 3. Each card swap opens 1, each correct guess opens 1 (until 6), the photo swap opens all. Pieces are cut and watermarked per viewer on the server; the full image never leaves the server before the photo swap.
 5. **Step away / unmatch / block revokes everything** revealed between the pair, for both, immediately.
 6. **Audience filters apply both ways:** someone appears in your drop only if their gender is in your "Interested in" and yours is in theirs. Year never limits who you see ("Match me on" only ranks). Hide list and blocks are symmetric and silent.
 7. **Verified fields are read-only to users** (official name, branch, year, enrollment number). They're set when a student is verified (college Google account, ID card review, or an admin letting them in) and only admins can change them. One account per enrollment number and per college email.
