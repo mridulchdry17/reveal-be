@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.admin.router import router as admin_router
 from src.auth.router import router as auth_router
 from src.config import settings
 from src.exceptions import DomainError, domain_error_handler
@@ -28,6 +29,7 @@ def create_app() -> FastAPI:
     )
     app.add_exception_handler(DomainError, domain_error_handler)
     app.include_router(health_router)
+    app.include_router(admin_router, prefix=API_V1)
     app.include_router(auth_router, prefix=API_V1)
     app.include_router(verification_router, prefix=API_V1)
     app.include_router(waitlist_router, prefix=API_V1)
