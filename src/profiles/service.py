@@ -1,6 +1,6 @@
 import secrets
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import UTC, datetime
 
 from fastapi.concurrency import run_in_threadpool
@@ -30,6 +30,7 @@ from src.profiles.schemas import (
     Contact,
     MyProfile,
     Option,
+    OwnedCards,
     PreferencesUpdate,
     ProfileOptions,
     PromptOut,
@@ -212,12 +213,16 @@ async def drop_candidates(
 
 
 async def public_profiles(
-    session: AsyncSession, viewer_id: uuid.UUID, owner_ids: Sequence[uuid.UUID]
+    session: AsyncSession,
+    viewer_id: uuid.UUID,
+    owner_ids: Sequence[uuid.UUID],
+    opened: Mapping[uuid.UUID, Collection[c.Card]] | None = None,
 ) -> dict[uuid.UUID, PublicProfile]:
     """What this viewer may see of each owner. The one place that decides visibility.
 
-    Everyone has the same layout (constants.SHOWN_CARDS); swaps will open more per
-    pair, which is why the viewer is passed in. Incomplete profiles are left out.
+    Everyone has the same layout (constants.SHOWN_CARDS). `opened` adds the cards a pair
+    has swapped, per owner; only swaps.service works that out, from live matches, so an
+    ended match opens nothing. Incomplete profiles are left out.
     """
     profiles = [p for p in await repository.get_for_users(session, owner_ids) if p.completed_at]
     if not profiles:
@@ -227,9 +232,27 @@ async def public_profiles(
     for prompt in await repository.prompts_for(session, [p.id for p in profiles]):
         prompts.setdefault(prompt.profile_id, []).append(prompt)
     return {
-        p.user_id: _to_public(p, names[p.user_id].name, prompts.get(p.id, []))
+        p.user_id: _to_public(
+            p, names[p.user_id].name, prompts.get(p.id, []), (opened or {}).get(p.user_id, ())
+        )
         for p in profiles
         if p.user_id in names
+    }
+
+
+async def owned_cards(
+    session: AsyncSession, user_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, OwnedCards]:
+    """Who has a voice note, photo and contact card. Missing profiles own nothing."""
+    profiles = {p.user_id: p for p in await repository.get_for_users(session, user_ids)}
+    return {
+        uid: OwnedCards(
+            voice=bool(p and p.voice_key),
+            photo=bool(p and p.photo_key),
+            contact=bool(p and p.contact_kind and p.contact_value),
+        )
+        for uid in user_ids
+        for p in [profiles.get(uid)]
     }
 
 
@@ -311,9 +334,11 @@ def _to_mine(user: Me, profile: Profile | None, prompts: list[ProfilePrompt]) ->
     )
 
 
-def _to_public(p: Profile, full_name: str, prompts: list[ProfilePrompt]) -> PublicProfile:
+def _to_public(
+    p: Profile, full_name: str, prompts: list[ProfilePrompt], opened: Collection[c.Card]
+) -> PublicProfile:
     cards = [card for card in c.PUBLIC_CARDS if card != c.Card.VOICE or p.voice_key]
-    shown = [card for card in cards if card in c.SHOWN_CARDS]
+    shown = [card for card in cards if card in c.SHOWN_CARDS or card in opened]
     return PublicProfile(
         nickname=p.nickname or "",
         vibe=p.vibe or "",
@@ -325,6 +350,12 @@ def _to_public(p: Profile, full_name: str, prompts: list[ProfilePrompt]) -> Publ
         hometown=p.hometown if c.Card.HOMETOWN in shown else None,
         looking_for=(
             c.LookingFor(p.looking_for) if c.Card.LOOKING_FOR in shown and p.looking_for else None
+        ),
+        voice_seconds=p.voice_seconds if c.Card.VOICE in shown and p.voice_key else None,
+        contact=(
+            Contact.model_construct(kind=c.ContactKind(p.contact_kind), value=p.contact_value)
+            if c.Card.CONTACT in shown and p.contact_kind and p.contact_value
+            else None
         ),
         shown_cards=shown,
         hidden_cards=[card for card in cards if card not in shown],
