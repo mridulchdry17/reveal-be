@@ -17,6 +17,7 @@ from src.drops.constants import COLLEGE_TZ, DROP_HOUR, DROP_SIZE, RESHOW_AFTER_D
 from src.drops.exceptions import DropItemClosed, DropItemNotFound
 from src.drops.models import DropItem
 from src.drops.schemas import DropItemOut, LikeRequest, LikeResult, Tonight
+from src.hides import service as hide_service
 from src.matches import service as match_service
 from src.profiles import service as profile_service
 
@@ -35,9 +36,10 @@ def next_drop_at(now: datetime) -> datetime:
 async def tonight(session: AsyncSession, user: Me, now: datetime) -> Tonight:
     drop_date = drop_date_for(now)
     await repository.lock_viewer(session, user.id)
+    hidden = await hide_service.hidden_ids(session, user.id)
     items = await repository.items(session, user.id, drop_date)
     if len(items) < DROP_SIZE:
-        items += await _top_up(session, user.id, drop_date, items)
+        items += await _top_up(session, user.id, drop_date, items, hidden)
     await session.commit()
     profiles = await profile_service.public_profiles(
         session, user.id, [i.shown_user_id for i in items]
@@ -52,7 +54,8 @@ async def tonight(session: AsyncSession, user: Me, now: datetime) -> Tonight:
                 profile=profiles[i.shown_user_id],
             )
             for i in items
-            if i.shown_user_id in profiles
+            # Someone hidden after the drop was built drops out of it too.
+            if i.shown_user_id in profiles and i.shown_user_id not in hidden
         ],
     )
 
@@ -83,7 +86,7 @@ async def in_tonight(
 ) -> bool:
     """Whether the owner is in the viewer's drop that's open now (answered or not)."""
     item = await repository.item_for(session, viewer_id, owner_id, drop_date_for(now))
-    return item is not None
+    return item is not None and not await hide_service.is_hidden(session, viewer_id, owner_id)
 
 
 async def blurred_photo(
@@ -93,14 +96,20 @@ async def blurred_photo(
     item = await repository.get_item(session, item_id)
     if item is None or item.viewer_id != user.id or item.drop_date != drop_date_for(now):
         raise DropItemNotFound
+    if await hide_service.is_hidden(session, user.id, item.shown_user_id):
+        raise DropItemNotFound
     return await profile_service.blurred_photo(session, user.id, item.shown_user_id)
 
 
 async def _top_up(
-    session: AsyncSession, viewer_id: uuid.UUID, drop_date: date, items: list[DropItem]
+    session: AsyncSession,
+    viewer_id: uuid.UUID,
+    drop_date: date,
+    items: list[DropItem],
+    hidden: set[uuid.UUID],
 ) -> list[DropItem]:
     since = drop_date - timedelta(days=RESHOW_AFTER_DAYS)
-    exclude = set(await repository.seen_ids(session, viewer_id, since))
+    exclude = set(await repository.seen_ids(session, viewer_id, since)) | hidden
     exclude |= set(await match_service.connected_ids(session, viewer_id))
     picked = await profile_service.drop_candidates(
         session, viewer_id, list(exclude), DROP_SIZE - len(items)
@@ -120,6 +129,8 @@ async def _open_item(
 ) -> DropItem:
     item = await repository.get_item(session, item_id)
     if item is None or item.viewer_id != user.id:
+        raise DropItemNotFound
+    if await hide_service.is_hidden(session, user.id, item.shown_user_id):
         raise DropItemNotFound
     if item.decision is not None or item.drop_date != drop_date_for(now):
         raise DropItemClosed("This drop has moved on")
