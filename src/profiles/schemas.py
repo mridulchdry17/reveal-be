@@ -164,7 +164,7 @@ class PublicProfile(BaseModel):
     """Another student's profile as one viewer may see it.
 
     Built only by profiles.service.public_profiles. A hidden card's value is null here,
-    never sent and hidden by the app.
+    never sent and hidden by the app. Cards open per pair through swaps.
     """
 
     nickname: str
@@ -176,5 +176,15 @@ class PublicProfile(BaseModel):
     year: int | None = Field(description="Part of the branch card")
     hometown: str | None
     looking_for: c.LookingFor | None
+    voice_seconds: int | None = Field(description="Set once the pair has swapped voice notes")
+    contact: Contact | None = Field(description="Set once the pair has swapped contact cards")
     shown_cards: list[c.Card]
     hidden_cards: list[c.Card]
+
+
+class OwnedCards(BaseModel):
+    """Which optional cards someone has filled in. Swaps need both people to have one."""
+
+    voice: bool
+    photo: bool
+    contact: bool

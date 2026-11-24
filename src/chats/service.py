@@ -13,6 +13,7 @@ from src.chats.schemas import ChatSummary, ChatThread, MessageOut
 from src.matches import service as match_service
 from src.matches.exceptions import MatchNotFound
 from src.profiles import service as profile_service
+from src.swaps import service as swap_service
 
 
 async def chats(session: AsyncSession, user: Me) -> list[ChatSummary]:
@@ -21,8 +22,9 @@ async def chats(session: AsyncSession, user: Me) -> list[ChatSummary]:
     ids = [m.id for m in matches]
     last = await repository.last_message_per_match(session, ids) if ids else {}
     seen = await repository.reads(session, user.id, ids) if ids else {}
+    opened = await swap_service.opened_cards(session, matches)
     profiles = await profile_service.public_profiles(
-        session, user.id, [m.other_user_id for m in matches]
+        session, user.id, [m.other_user_id for m in matches], opened
     )
     rows = [
         ChatSummary(
@@ -45,7 +47,10 @@ async def chats(session: AsyncSession, user: Me) -> list[ChatSummary]:
 
 async def thread(session: AsyncSession, user: Me, match_id: uuid.UUID) -> ChatThread:
     match = await match_service.live_match(session, user.id, match_id)
-    profiles = await profile_service.public_profiles(session, user.id, [match.other_user_id])
+    opened = await swap_service.opened_cards(session, [match])
+    profiles = await profile_service.public_profiles(
+        session, user.id, [match.other_user_id], opened
+    )
     if match.other_user_id not in profiles:
         raise MatchNotFound
     messages = await repository.latest_messages(session, match.id, THREAD_LIMIT)
@@ -54,6 +59,7 @@ async def thread(session: AsyncSession, user: Me, match_id: uuid.UUID) -> ChatTh
         profile=profiles[match.other_user_id],
         matched_at=match.matched_at,
         messages=[_out(m, user) for m in messages],
+        swaps=await swap_service.board(session, user.id, match),
     )
 
 

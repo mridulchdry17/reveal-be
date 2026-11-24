@@ -46,8 +46,9 @@ src/
   matches/             likes (Likes list, match back, pass), matches, unmatch
   chats/               messages between matched students, Chats tab list, unread state
   safety/              block and report (both end the match); reports listed for admins
+  swaps/               swap requests per match; which cards are open; photo pieces count
   clock.py             now() as a dependency, so tests can set the time
-  <domain>/            planned: swaps, guess, notifications, moderation
+  <domain>/            planned: guess, notifications, moderation
     router.py          HTTP only: parse, call service, return schema
     schemas.py         Pydantic request/response models
     models.py          SQLAlchemy tables
@@ -104,6 +105,7 @@ These are the reason the product exists. Every one needs a test, and a change th
 - Every route sets `response_model` and `status_code`, and lists its error responses with `ErrorResponse`. API docs are off outside `local` and `staging`.
 - Product routes live under `/v1`. A breaking change ships as a new version next to the old one, because installed PWAs keep old code cached.
 - Tables use `UUIDPrimaryKeyMixin` + `TimestampMixin`. Never expose sequential ids.
+- Swaps (`swaps.service`): one `swap` row per request; at most one pending or accepted per card per match (partial unique index), changes serialized per match with an advisory lock. Asking for a card they already asked for accepts it. The service works out the opened cards from live matches and passes them to `profiles.service.public_profiles(..., opened)`, which alone turns them into fields; `ChatThread.swaps` carries each card's state and the open photo pieces (`PIECE_ORDER`: centre column last). Ending a match needs no cleanup: nothing reads swaps of an ended match.
 - Never reveal whether someone else's data exists. If submitted details clash with another person's entry, answer exactly like a success and save nothing (see `waitlist.service.join`). On a dating app, "is she on it?" must be unanswerable.
 - Signed-in routes use `Depends(current_user)`; admin screens use `Depends(admin_user)` (admins = `ADMIN_EMAILS`). The older `require_admin` (`X-Admin-Token`) is only for scripts like the waitlist CSV export; those routes use `include_in_schema=False`, so they never reach the frontend's generated types.
 - Sign-in: the frontend sends Google's ID token to `POST /v1/auth/google`; we verify it with `google-auth` and return an opaque session token (stored only as SHA-256). Any Google account can sign in; being a verified student is a separate step. Tests override `get_google_verifier`, never call Google.

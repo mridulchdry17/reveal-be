@@ -71,7 +71,7 @@ async def end(
     session: AsyncSession, user_id: uuid.UUID, match_id: uuid.UUID, now: datetime
 ) -> MatchInfo:
     """End a match for both people. Doesn't commit: block and report end it in their own
-    transaction. With swaps, this is also where everything opened between them closes."""
+    transaction. Everything swapped closes with it: swaps are only read for live matches."""
     match = await repository.live_match(session, user_id, match_id)
     if match is None:
         raise MatchNotFound
