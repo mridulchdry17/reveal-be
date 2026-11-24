@@ -21,6 +21,42 @@ PROMPT_QUESTIONS = [
 PROMPT_COUNT = 3
 PROMPT_ANSWER_MAX = 120
 
+
+class GuessKind(StrEnum):
+    EVERYDAY = "everyday"
+    HOT_TAKE = "hot_take"
+    LITTLE_THING = "little_thing"
+
+
+GUESS_KIND_LABELS = {
+    GuessKind.EVERYDAY: "Everyday choice",
+    GuessKind.HOT_TAKE: "Hot take",
+    GuessKind.LITTLE_THING: "Little thing",
+}
+GUESS_SUGGESTIONS = {
+    GuessKind.EVERYDAY: [
+        "Chai or coffee?", "My go-to canteen order", "How I spend a free period",
+        "Early riser or snooze-button person?",
+    ],
+    GuessKind.HOT_TAKE: [
+        "The most overrated thing on campus", "Pineapple on pizza?", "Best season of the year",
+        "Movies: theatre or laptop?",
+    ],
+    GuessKind.LITTLE_THING: [
+        "What I always carry in my bag", "My comfort show", "The emoji I use the most",
+        "What I do when I can't sleep",
+    ],
+}  # fmt: skip
+GUESS_CARD_COUNT = 3
+GUESS_OPTION_COUNT = 3
+GUESS_QUESTION_MAX = 90
+GUESS_OPTION_MAX = 40
+# How sharp someone's blurred photo is before matching, by the viewer's right guesses on
+# their cards (0-3): the photo is shrunk to this many pixels on its longer side, then
+# blurred and blown up to BLUR_SIDE. Even the last step stays far too coarse to know a face.
+BLUR_STEPS = (6, 8, 10, 12)
+BLUR_SIDE = 600
+
 NICKNAME_SUGGESTIONS = ["Midnight chai", "Lost playlist", "Sunset chaser", "Quiet storm"]
 
 

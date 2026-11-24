@@ -25,6 +25,18 @@ async def get_item(session: AsyncSession, item_id: uuid.UUID) -> DropItem | None
     return await session.get(DropItem, item_id)
 
 
+async def item_for(
+    session: AsyncSession, viewer_id: uuid.UUID, shown_user_id: uuid.UUID, drop_date: date
+) -> DropItem | None:
+    return await session.scalar(
+        select(DropItem).where(
+            DropItem.viewer_id == viewer_id,
+            DropItem.shown_user_id == shown_user_id,
+            DropItem.drop_date == drop_date,
+        )
+    )
+
+
 async def seen_ids(session: AsyncSession, viewer_id: uuid.UUID, since: date) -> list[uuid.UUID]:
     """Everyone shown on or after `since`, plus everyone ever liked or passed."""
     rows = await session.scalars(

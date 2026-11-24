@@ -78,6 +78,24 @@ async def pass_on(session: AsyncSession, user: Me, item_id: uuid.UUID, now: date
     await session.commit()
 
 
+async def in_tonight(
+    session: AsyncSession, viewer_id: uuid.UUID, owner_id: uuid.UUID, now: datetime
+) -> bool:
+    """Whether the owner is in the viewer's drop that's open now (answered or not)."""
+    item = await repository.item_for(session, viewer_id, owner_id, drop_date_for(now))
+    return item is not None
+
+
+async def blurred_photo(
+    session: AsyncSession, user: Me, item_id: uuid.UUID, now: datetime
+) -> bytes:
+    """The blurred photo of someone in tonight's drop. Answered items still count."""
+    item = await repository.get_item(session, item_id)
+    if item is None or item.viewer_id != user.id or item.drop_date != drop_date_for(now):
+        raise DropItemNotFound
+    return await profile_service.blurred_photo(session, user.id, item.shown_user_id)
+
+
 async def _top_up(
     session: AsyncSession, viewer_id: uuid.UUID, drop_date: date, items: list[DropItem]
 ) -> list[DropItem]:

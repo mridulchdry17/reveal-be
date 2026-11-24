@@ -90,6 +90,22 @@ def _info(match: Match, user_id: uuid.UUID) -> MatchInfo:
     return MatchInfo(id=match.id, other_user_id=other, matched_at=match.created_at)
 
 
+async def can_see(session: AsyncSession, viewer_id: uuid.UUID, owner_id: uuid.UUID) -> bool:
+    """The owner liked the viewer and is waiting for an answer, or they're matched now."""
+    like = await repository.get_like(session, owner_id, viewer_id)
+    if like is not None and like.status == LikeStatus.PENDING:
+        return True
+    return await repository.live_match_between(session, viewer_id, owner_id) is not None
+
+
+async def blurred_photo(session: AsyncSession, user: Me, like_id: uuid.UUID) -> bytes:
+    """The blurred photo of someone whose like is waiting for me."""
+    like = await repository.get_like_by_id(session, like_id)
+    if like is None or like.to_user_id != user.id or like.status != LikeStatus.PENDING:
+        raise LikeNotFound
+    return await profile_service.blurred_photo(session, user.id, like.from_user_id)
+
+
 async def connected_ids(session: AsyncSession, user_id: uuid.UUID) -> list[uuid.UUID]:
     """People this user already has history with, so the drop doesn't show them again."""
     return await repository.connected_ids(session, user_id)

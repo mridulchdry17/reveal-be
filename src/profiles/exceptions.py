@@ -35,3 +35,15 @@ class VoiceNoteTooLarge(DomainError):
 class NotAVoiceNote(DomainError):
     status_code = 422
     code = "not_a_voice_note"
+
+
+class GuessCardNotFound(NotFound):
+    """Missing, yours, or someone you can't see right now: all look the same."""
+
+    code = "guess_card_not_found"
+
+
+class AlreadyGuessed(Conflict):
+    """One try per card."""
+
+    code = "already_guessed"

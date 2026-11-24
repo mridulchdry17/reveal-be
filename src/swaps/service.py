@@ -4,7 +4,8 @@ Rules (CLAUDE.md, product rules 2-5):
 - A card opens only when both have said yes, for both, in one transaction.
 - Voice, photo and contact need both people to have one. Voice isn't offered otherwise.
 - Photo needs at least one card swap first; contact needs the photo swap.
-- Photo pieces: 1 per card swap up to 6, all 9 with the photo swap, and only while both
+- Photo pieces: 1 per card swap plus 1 per right guess on their cards (per viewer, so the
+  two can see different counts) up to 6, all 9 with the photo swap, and only while both
   have a photo, so nobody sees pieces of someone who can't see theirs.
 - Everything is read through live matches, so unmatch, block and report close it all.
 """
@@ -48,6 +49,7 @@ class _Pair:
     viewer_id: uuid.UUID
     mine: OwnedCards
     theirs: OwnedCards
+    right_guesses: int = 0  # mine, on their guess cards
     accepted: set[Card] = field(default_factory=set)
     pending: dict[Card, Swap] = field(default_factory=dict)
 
@@ -157,7 +159,13 @@ def _accept(swap: Swap, now: datetime) -> None:
 
 async def _pair(session: AsyncSession, viewer_id: uuid.UUID, match: MatchInfo) -> _Pair:
     owned = await profile_service.owned_cards(session, [viewer_id, match.other_user_id])
-    pair = _Pair(viewer_id=viewer_id, mine=owned[viewer_id], theirs=owned[match.other_user_id])
+    right = await profile_service.right_guesses(session, viewer_id, [match.other_user_id])
+    pair = _Pair(
+        viewer_id=viewer_id,
+        mine=owned[viewer_id],
+        theirs=owned[match.other_user_id],
+        right_guesses=right[match.other_user_id],
+    )
     for s in await repository.open_swaps(session, [match.id]):
         if s.status == SwapStatus.ACCEPTED:
             pair.accepted.add(Card(s.card))
@@ -205,5 +213,5 @@ def _pieces(pair: _Pair) -> list[int]:
         return []
     if Card.PHOTO in pair.accepted:
         return sorted(PIECE_ORDER[:PHOTO_PIECES])
-    swapped = len(pair.accepted.intersection(CARD_SWAPS))
-    return sorted(PIECE_ORDER[: min(swapped, PIECES_BEFORE_PHOTO_SWAP)])
+    earned = len(pair.accepted.intersection(CARD_SWAPS)) + pair.right_guesses
+    return sorted(PIECE_ORDER[: min(earned, PIECES_BEFORE_PHOTO_SWAP)])

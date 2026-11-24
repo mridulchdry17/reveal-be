@@ -14,6 +14,7 @@ from src.profiles.schemas import (
     BasicsUpdate,
     CardsUpdate,
     Contact,
+    GuessCardsUpdate,
     MyProfile,
     PreferencesUpdate,
     ProfileOptions,
@@ -64,6 +65,17 @@ async def update_basics(body: BasicsUpdate, user: Student, session: Session) -> 
 )
 async def update_prompts(body: PromptsUpdate, user: Student, session: Session) -> MyProfile:
     return await service.update_prompts(session, user, body)
+
+
+@router.put(
+    "/me/guesses",
+    response_model=MyProfile,
+    status_code=status.HTTP_200_OK,
+    summary="My three guess cards (replaces all three)",
+    responses=_SAVE_ERRORS,
+)
+async def update_guesses(body: GuessCardsUpdate, user: Student, session: Session) -> MyProfile:
+    return await service.update_guesses(session, user, body)
 
 
 @router.put(
