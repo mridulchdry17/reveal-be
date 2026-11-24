@@ -2,11 +2,18 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import Integer, case, delete, func, literal, select
+from sqlalchemy import Integer, and_, case, delete, exists, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from src.profiles.models import Profile, ProfilePrompt
+from src.profiles.models import Guess, GuessCard, Profile, ProfilePrompt
+
+# Finished once (completed_at) and has guess cards: profiles finished before guess cards
+# existed count as unfinished until their owner adds them.
+_COMPLETE = and_(
+    Profile.completed_at.is_not(None),
+    exists().where(GuessCard.profile_id == Profile.id),
+)
 
 
 async def get_for_user(session: AsyncSession, user_id: uuid.UUID) -> Profile | None:
@@ -15,6 +22,11 @@ async def get_for_user(session: AsyncSession, user_id: uuid.UUID) -> Profile | N
 
 async def get_for_users(session: AsyncSession, user_ids: Sequence[uuid.UUID]) -> list[Profile]:
     rows = await session.scalars(select(Profile).where(Profile.user_id.in_(user_ids)))
+    return list(rows)
+
+
+async def complete_for_users(session: AsyncSession, user_ids: Sequence[uuid.UUID]) -> list[Profile]:
+    rows = await session.scalars(select(Profile).where(Profile.user_id.in_(user_ids), _COMPLETE))
     return list(rows)
 
 
@@ -69,7 +81,7 @@ async def candidates(session: AsyncSession, audience: Audience, limit: int) -> l
     query = (
         select(Profile.user_id)
         .where(
-            Profile.completed_at.is_not(None),
+            _COMPLETE,
             Profile.user_id != a.viewer_user_id,
             Profile.gender.in_(a.genders),
             Profile.interested_in.in_(a.interested_in),
@@ -99,6 +111,75 @@ async def replace_prompts(
         ProfilePrompt(profile_id=profile_id, position=i, question=q, answer=a)
         for i, (q, a) in enumerate(items)
     )
+    await session.flush()
+
+
+async def guess_cards_for(
+    session: AsyncSession, profile_ids: Sequence[uuid.UUID]
+) -> list[GuessCard]:
+    rows = await session.scalars(
+        select(GuessCard).where(GuessCard.profile_id.in_(profile_ids)).order_by(GuessCard.position)
+    )
+    return list(rows)
+
+
+async def replace_guess_cards(
+    session: AsyncSession, profile_id: uuid.UUID, keep: Sequence[uuid.UUID], new: list[GuessCard]
+) -> None:
+    """Delete every card of this profile not in `keep` (their guesses go too), add `new`."""
+    await session.execute(
+        delete(GuessCard).where(GuessCard.profile_id == profile_id, GuessCard.id.not_in(keep))
+    )
+    session.add_all(new)
+    await session.flush()
+
+
+async def guess_card_with_owner(
+    session: AsyncSession, card_id: uuid.UUID
+) -> tuple[GuessCard, uuid.UUID] | None:
+    row = (
+        await session.execute(
+            select(GuessCard, Profile.user_id)
+            .join(Profile, Profile.id == GuessCard.profile_id)
+            .where(GuessCard.id == card_id)
+        )
+    ).first()
+    return (row[0], row[1]) if row else None
+
+
+async def guesses_by(
+    session: AsyncSession, guesser_id: uuid.UUID, card_ids: Sequence[uuid.UUID]
+) -> list[Guess]:
+    rows = await session.scalars(
+        select(Guess).where(Guess.guesser_id == guesser_id, Guess.card_id.in_(card_ids))
+    )
+    return list(rows)
+
+
+async def get_guess(
+    session: AsyncSession, guesser_id: uuid.UUID, card_id: uuid.UUID
+) -> Guess | None:
+    return await session.scalar(
+        select(Guess).where(Guess.guesser_id == guesser_id, Guess.card_id == card_id)
+    )
+
+
+async def right_guess_counts(
+    session: AsyncSession, guesser_id: uuid.UUID, owner_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """Right guesses by this guesser on each owner's current cards."""
+    rows = await session.execute(
+        select(Profile.user_id, func.count(Guess.id))
+        .join(GuessCard, GuessCard.profile_id == Profile.id)
+        .join(Guess, Guess.card_id == GuessCard.id)
+        .where(Profile.user_id.in_(owner_ids), Guess.guesser_id == guesser_id, Guess.correct)
+        .group_by(Profile.user_id)
+    )
+    return {user_id: count for user_id, count in rows.tuples()}
+
+
+async def add_guess(session: AsyncSession, guess: Guess) -> None:
+    session.add(guess)
     await session.flush()
 
 

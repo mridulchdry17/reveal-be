@@ -22,6 +22,28 @@ PROMPTS = {
         {"question": "Green flag in people", "answer": "They remember small things"},
     ]
 }
+GUESSES = {
+    "cards": [
+        {
+            "kind": "everyday",
+            "question": "Chai or coffee?",
+            "options": ["Chai", "Coffee", "Neither"],
+            "answer": 0,
+        },
+        {
+            "kind": "hot_take",
+            "question": "Best season of the year",
+            "options": ["Summer", "Monsoon", "Winter"],
+            "answer": 1,
+        },
+        {
+            "kind": "little_thing",
+            "question": "What I always carry in my bag",
+            "options": ["Earphones", "A book", "Snacks"],
+            "answer": 2,
+        },
+    ]
+}
 CARDS = {
     "branch": "CSE",
     "year": 2,
@@ -70,12 +92,13 @@ async def test_profile_is_for_verified_students_only(client: AsyncClient) -> Non
     ).status_code == 403
 
 
-async def test_filling_all_four_screens_completes_the_profile(client: AsyncClient) -> None:
+async def test_filling_every_screen_completes_the_profile(client: AsyncClient) -> None:
     headers = await student(client)
 
     for path, body in [
         ("basics", BASICS),
         ("prompts", PROMPTS),
+        ("guesses", GUESSES),
         ("cards", CARDS),
         ("preferences", PREFERENCES),
     ]:
@@ -237,7 +260,8 @@ async def test_contact_can_be_removed(client: AsyncClient) -> None:
 async def test_contact_is_optional_for_a_complete_profile(client: AsyncClient) -> None:
     headers = await student(client)
     for path, body in [
-        ("basics", BASICS), ("prompts", PROMPTS), ("cards", CARDS), ("preferences", PREFERENCES)
+        ("basics", BASICS), ("prompts", PROMPTS), ("guesses", GUESSES), ("cards", CARDS),
+        ("preferences", PREFERENCES),
     ]:  # fmt: skip
         response = await client.put(f"/v1/profile/me/{path}", json=body, headers=headers)
 

@@ -70,6 +70,29 @@ class PromptsUpdate(BaseModel):
         return value
 
 
+GuessOption = Annotated[CleanText, Field(min_length=1, max_length=c.GUESS_OPTION_MAX)]
+
+
+class GuessCardIn(BaseModel):
+    kind: c.GuessKind
+    question: CleanText = Field(min_length=1, max_length=c.GUESS_QUESTION_MAX)
+    options: list[GuessOption] = Field(
+        min_length=c.GUESS_OPTION_COUNT, max_length=c.GUESS_OPTION_COUNT
+    )
+    answer: int = Field(ge=0, lt=c.GUESS_OPTION_COUNT, description="Index of the true option")
+
+    @field_validator("options")
+    @classmethod
+    def _different_options(cls, value: list[str]) -> list[str]:
+        if len({o.lower() for o in value}) != len(value):
+            raise ValueError("Give three different options")
+        return value
+
+
+class GuessCardsUpdate(BaseModel):
+    cards: list[GuessCardIn] = Field(min_length=c.GUESS_CARD_COUNT, max_length=c.GUESS_CARD_COUNT)
+
+
 class CardsUpdate(BaseModel):
     branch: CleanText = Field(min_length=2, max_length=40)
     year: int = Field(ge=1, le=5, description="Year of study, 1 = first-year")
@@ -116,6 +139,14 @@ class PromptOut(BaseModel):
     answer: str
 
 
+class MyGuessCard(BaseModel):
+    id: uuid.UUID
+    kind: c.GuessKind
+    question: str
+    options: list[str]
+    answer: int
+
+
 class MyProfile(BaseModel):
     """Everything the owner sees about their own profile, including locked cards."""
 
@@ -124,6 +155,7 @@ class MyProfile(BaseModel):
     vibe: str | None
     interests: list[str]
     prompts: list[PromptOut]
+    guess_cards: list[MyGuessCard]
     branch: str | None
     year: int | None
     hometown: str | None
@@ -136,9 +168,10 @@ class MyProfile(BaseModel):
     gender: c.Gender | None
     interested_in: c.InterestedIn | None
     match_on: list[c.MatchOn]
-    # Which of the four screens are done, so the app can resume where they left off.
+    # Which of the screens are done, so the app can resume where they left off.
     basics_done: bool
     prompts_done: bool
+    guesses_done: bool
     cards_done: bool
     preferences_done: bool
     complete: bool
@@ -158,6 +191,23 @@ class ProfileOptions(BaseModel):
     prompt_answer_max: int
     nickname_suggestions: list[str]
     looking_for: list[Option]
+    guess_kinds: list[Option]
+    guess_suggestions: dict[c.GuessKind, list[str]] = Field(
+        description="A few example questions per guess kind"
+    )
+    guess_question_max: int
+    guess_option_max: int
+
+
+class GuessCardOut(BaseModel):
+    """One of their guess cards, from this viewer's side."""
+
+    id: uuid.UUID
+    kind: c.GuessKind
+    question: str
+    options: list[str]
+    picked: int | None = Field(description="My guess, or null if I haven't guessed yet")
+    answer: int | None = Field(description="The true option; null until I've guessed")
 
 
 class PublicProfile(BaseModel):
@@ -180,6 +230,13 @@ class PublicProfile(BaseModel):
     contact: Contact | None = Field(description="Set once the pair has swapped contact cards")
     shown_cards: list[c.Card]
     hidden_cards: list[c.Card]
+    guess_cards: list[GuessCardOut]
+    right_guesses: int = Field(description="How many of their cards I've guessed right (0-3)")
+    has_blurred_photo: bool = Field(
+        description="We both have a photo, so a blurred one is available before matching "
+        "(GET /v1/drops/tonight/{item_id}/photo or /v1/likes/{like_id}/photo). "
+        "Each right guess makes it a little clearer; refetch after one."
+    )
 
 
 class OwnedCards(BaseModel):

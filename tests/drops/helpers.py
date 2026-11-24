@@ -5,7 +5,7 @@ from typing import Any
 
 from httpx import AsyncClient
 
-from tests.profiles.test_profile import BASICS, CARDS, PROMPTS, student
+from tests.profiles.test_profile import BASICS, CARDS, GUESSES, PROMPTS, student
 
 # 10 PM in college time (IST = UTC+5:30): tonight's drop is open.
 TONIGHT = datetime(2026, 11, 22, 16, 30, tzinfo=UTC)
@@ -18,13 +18,14 @@ async def finished(
     interested_in: str = "men",
     **cards: Any,
 ) -> dict[str, str]:
-    """A verified student with all four profile screens saved. Returns auth headers."""
+    """A verified student with every profile screen saved. Returns auth headers."""
     sub = name.lower()
     headers = await student(client, f"sub-{sub}|{sub}@adgips.ac.in|{name} Test|yes|adgips.ac.in")
     preferences = {"gender": gender, "interested_in": interested_in, "match_on": []}
     for path, body in [
         ("basics", {**BASICS, "nickname": f"{name} nick"}),
         ("prompts", PROMPTS),
+        ("guesses", GUESSES),
         ("cards", {**CARDS, **cards}),
         ("preferences", preferences),
     ]:

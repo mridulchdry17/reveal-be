@@ -14,6 +14,8 @@ from src.config import settings
 from src.profiles import constants as c
 from src.profiles import photo, repository, voice
 from src.profiles.exceptions import (
+    AlreadyGuessed,
+    GuessCardNotFound,
     NotAPhoto,
     NotAVoiceNote,
     PhotoNotFound,
@@ -23,11 +25,14 @@ from src.profiles.exceptions import (
     VoiceNoteNotFound,
     VoiceNoteTooLarge,
 )
-from src.profiles.models import Profile, ProfilePrompt
+from src.profiles.models import Guess, GuessCard, Profile, ProfilePrompt
 from src.profiles.schemas import (
     BasicsUpdate,
     CardsUpdate,
     Contact,
+    GuessCardOut,
+    GuessCardsUpdate,
+    MyGuessCard,
     MyProfile,
     Option,
     OwnedCards,
@@ -49,14 +54,23 @@ def options() -> ProfileOptions:
         prompt_answer_max=c.PROMPT_ANSWER_MAX,
         nickname_suggestions=c.NICKNAME_SUGGESTIONS,
         looking_for=[Option(value=k, label=v) for k, v in c.LOOKING_FOR_LABELS.items()],
+        guess_kinds=[Option(value=k, label=v) for k, v in c.GUESS_KIND_LABELS.items()],
+        guess_suggestions=c.GUESS_SUGGESTIONS,
+        guess_question_max=c.GUESS_QUESTION_MAX,
+        guess_option_max=c.GUESS_OPTION_MAX,
     )
 
 
 async def my_profile(session: AsyncSession, user: Me) -> MyProfile:
     profile = await repository.get_for_user(session, user.id)
     if profile is None:
-        return _to_mine(user, None, [])
-    return _to_mine(user, profile, await repository.prompts(session, profile.id))
+        return _to_mine(user, None, [], [])
+    return _to_mine(
+        user,
+        profile,
+        await repository.prompts(session, profile.id),
+        await repository.guess_cards_for(session, [profile.id]),
+    )
 
 
 async def update_basics(session: AsyncSession, user: Me, body: BasicsUpdate) -> MyProfile:
@@ -72,6 +86,37 @@ async def update_prompts(session: AsyncSession, user: Me, body: PromptsUpdate) -
     await repository.replace_prompts(
         session, profile.id, [(p.question, p.answer) for p in body.prompts]
     )
+    return await _save(session, user, profile)
+
+
+async def update_guesses(session: AsyncSession, user: Me, body: GuessCardsUpdate) -> MyProfile:
+    """Replace all three guess cards. A card saved unchanged keeps its id and the guesses
+    people made on it; a changed card is a new card, and guesses on the old one are gone."""
+    profile = await _get_or_create(session, user)
+    current = {g.position: g for g in await repository.guess_cards_for(session, [profile.id])}
+    keep: list[uuid.UUID] = []
+    new: list[GuessCard] = []
+    for position, card in enumerate(body.cards):
+        old = current.get(position)
+        if old and (old.kind, old.question, list(old.options), old.answer) == (
+            card.kind,
+            card.question,
+            card.options,
+            card.answer,
+        ):
+            keep.append(old.id)
+        else:
+            new.append(
+                GuessCard(
+                    profile_id=profile.id,
+                    position=position,
+                    kind=card.kind,
+                    question=card.question,
+                    options=card.options,
+                    answer=card.answer,
+                )
+            )
+    await repository.replace_guess_cards(session, profile.id, keep, new)
     return await _save(session, user, profile)
 
 
@@ -210,8 +255,9 @@ async def drop_candidates(
     theirs. "Match me on" only ranks people higher; it never hides anyone. A complete
     profile implies a verified student, since only verified students can save one.
     """
-    me = await repository.get_for_user(session, viewer_id)
-    if me is None or me.completed_at is None or not me.gender or not me.interested_in:
+    found = await repository.complete_for_users(session, [viewer_id])
+    me = found[0] if found else None
+    if me is None or not me.gender or not me.interested_in:
         raise ProfileIncomplete("Finish your profile first")
     boosts = set(me.match_on)
     audience = repository.Audience(
@@ -238,21 +284,94 @@ async def public_profiles(
     Everyone has the same layout (constants.SHOWN_CARDS). `opened` adds the cards a pair
     has swapped, per owner; only swaps.service works that out, from live matches, so an
     ended match opens nothing. Incomplete profiles are left out.
+
+    Guess cards show their answer only to a viewer who has already guessed that card.
     """
-    profiles = [p for p in await repository.get_for_users(session, owner_ids) if p.completed_at]
+    profiles = await repository.complete_for_users(session, owner_ids)
     if not profiles:
         return {}
     names = await auth_service.accounts(session, [p.user_id for p in profiles])
+    profile_ids = [p.id for p in profiles]
     prompts: dict[uuid.UUID, list[ProfilePrompt]] = {}
-    for prompt in await repository.prompts_for(session, [p.id for p in profiles]):
+    for prompt in await repository.prompts_for(session, profile_ids):
         prompts.setdefault(prompt.profile_id, []).append(prompt)
+    cards: dict[uuid.UUID, list[GuessCard]] = {}
+    all_cards = await repository.guess_cards_for(session, profile_ids)
+    for card in all_cards:
+        cards.setdefault(card.profile_id, []).append(card)
+    picks = {
+        g.card_id: g
+        for g in await repository.guesses_by(session, viewer_id, [x.id for x in all_cards])
+    }
+    viewer = await repository.get_for_user(session, viewer_id)
+    viewer_has_photo = bool(viewer and viewer.photo_key)
     return {
         p.user_id: _to_public(
-            p, names[p.user_id].name, prompts.get(p.id, []), (opened or {}).get(p.user_id, ())
+            p,
+            names[p.user_id].name,
+            prompts.get(p.id, []),
+            (opened or {}).get(p.user_id, ()),
+            _guess_cards_out(cards.get(p.id, []), picks),
+            viewer_has_photo,
         )
         for p in profiles
         if p.user_id in names
     }
+
+
+async def guess_card_owner(session: AsyncSession, card_id: uuid.UUID) -> uuid.UUID | None:
+    """Whose guess card this is, or None if there's no such card."""
+    found = await repository.guess_card_with_owner(session, card_id)
+    return found[1] if found else None
+
+
+async def record_guess(
+    session: AsyncSession, guesser_id: uuid.UUID, card_id: uuid.UUID, pick: int
+) -> int:
+    """Save someone's one try at a card and return the true option. Doesn't commit.
+
+    guesses.service calls this only after checking the guesser may see the card's owner.
+    """
+    found = await repository.guess_card_with_owner(session, card_id)
+    if found is None:
+        raise GuessCardNotFound
+    card, _ = found
+    if await repository.get_guess(session, guesser_id, card_id):
+        raise AlreadyGuessed("You've already guessed this one")
+    guess = Guess(guesser_id=guesser_id, card_id=card_id, picked=pick, correct=pick == card.answer)
+    try:
+        async with session.begin_nested():
+            await repository.add_guess(session, guess)
+    except IntegrityError as error:  # the same guess sent twice at once
+        raise AlreadyGuessed("You've already guessed this one") from error
+    return card.answer
+
+
+async def right_guesses(
+    session: AsyncSession, viewer_id: uuid.UUID, owner_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """How many of each owner's current cards this viewer guessed right (0-3)."""
+    counts = await repository.right_guess_counts(session, viewer_id, owner_ids)
+    return {uid: counts.get(uid, 0) for uid in owner_ids}
+
+
+async def blurred_photo(session: AsyncSession, viewer_id: uuid.UUID, owner_id: uuid.UUID) -> bytes:
+    """The owner's photo, blurred past recognition; a little less per right guess.
+
+    Only when both have a photo, so nobody sees even this much of someone who can't see
+    theirs. drops.service and matches.service call it after checking the viewer may see
+    the owner (in tonight's drop, or a like waiting for them).
+    """
+    found = {p.user_id: p for p in await repository.get_for_users(session, [viewer_id, owner_id])}
+    viewer, owner = found.get(viewer_id), found.get(owner_id)
+    data = None
+    if viewer and viewer.photo_key and owner and owner.photo_key:
+        data = await media.get(owner.photo_key)
+    if data is None:
+        raise PhotoNotFound("No photo to show")
+    right = (await right_guesses(session, viewer_id, [owner_id]))[owner_id]
+    tiny = c.BLUR_STEPS[min(right, len(c.BLUR_STEPS) - 1)]
+    return await run_in_threadpool(photo.blurred, data, tiny, c.BLUR_SIDE)
 
 
 async def owned_cards(
@@ -308,17 +427,21 @@ async def _get_or_create(session: AsyncSession, user: Me) -> Profile:
 
 async def _save(session: AsyncSession, user: Me, profile: Profile) -> MyProfile:
     prompts = await repository.prompts(session, profile.id)
-    mine = _to_mine(user, profile, prompts)
+    guess_cards = await repository.guess_cards_for(session, [profile.id])
+    mine = _to_mine(user, profile, prompts, guess_cards)
     if mine.complete and profile.completed_at is None:
         profile.completed_at = datetime.now(UTC)
     await session.commit()
     return mine
 
 
-def _to_mine(user: Me, profile: Profile | None, prompts: list[ProfilePrompt]) -> MyProfile:
+def _to_mine(
+    user: Me, profile: Profile | None, prompts: list[ProfilePrompt], guess_cards: list[GuessCard]
+) -> MyProfile:
     p = profile
     basics_done = bool(p and p.nickname and p.vibe and len(p.interests) >= c.MIN_INTERESTS)
     prompts_done = len(prompts) == c.PROMPT_COUNT
+    guesses_done = len(guess_cards) == c.GUESS_CARD_COUNT
     cards_done = bool(p and p.branch and p.year and p.hometown and p.looking_for)
     preferences_done = bool(p and p.gender and p.interested_in)
     return MyProfile(
@@ -327,6 +450,16 @@ def _to_mine(user: Me, profile: Profile | None, prompts: list[ProfilePrompt]) ->
         vibe=p.vibe if p else None,
         interests=list(p.interests) if p else [],
         prompts=[PromptOut(id=x.id, question=x.question, answer=x.answer) for x in prompts],
+        guess_cards=[
+            MyGuessCard(
+                id=g.id,
+                kind=c.GuessKind(g.kind),
+                question=g.question,
+                options=list(g.options),
+                answer=g.answer,
+            )
+            for g in guess_cards
+        ],
         branch=p.branch if p else None,
         year=p.year if p else None,
         hometown=p.hometown if p else None,
@@ -343,14 +476,37 @@ def _to_mine(user: Me, profile: Profile | None, prompts: list[ProfilePrompt]) ->
         match_on=[c.MatchOn(x) for x in p.match_on] if p else [],
         basics_done=basics_done,
         prompts_done=prompts_done,
+        guesses_done=guesses_done,
         cards_done=cards_done,
         preferences_done=preferences_done,
-        complete=basics_done and prompts_done and cards_done and preferences_done,
+        complete=basics_done and prompts_done and guesses_done and cards_done and preferences_done,
     )
 
 
+def _guess_cards_out(
+    cards: list[GuessCard], picks: Mapping[uuid.UUID, Guess]
+) -> list[GuessCardOut]:
+    """Their cards for one viewer: the answer only on cards this viewer has guessed."""
+    return [
+        GuessCardOut(
+            id=g.id,
+            kind=c.GuessKind(g.kind),
+            question=g.question,
+            options=list(g.options),
+            picked=picks[g.id].picked if g.id in picks else None,
+            answer=g.answer if g.id in picks else None,
+        )
+        for g in cards
+    ]
+
+
 def _to_public(
-    p: Profile, full_name: str, prompts: list[ProfilePrompt], opened: Collection[c.Card]
+    p: Profile,
+    full_name: str,
+    prompts: list[ProfilePrompt],
+    opened: Collection[c.Card],
+    guess_cards: list[GuessCardOut],
+    viewer_has_photo: bool,
 ) -> PublicProfile:
     cards = [card for card in c.PUBLIC_CARDS if card != c.Card.VOICE or p.voice_key]
     shown = [card for card in cards if card in c.SHOWN_CARDS or card in opened]
@@ -374,4 +530,7 @@ def _to_public(
         ),
         shown_cards=shown,
         hidden_cards=[card for card in cards if card not in shown],
+        guess_cards=guess_cards,
+        right_guesses=sum(1 for g in guess_cards if g.answer is not None and g.picked == g.answer),
+        has_blurred_photo=viewer_has_photo and bool(p.photo_key),
     )

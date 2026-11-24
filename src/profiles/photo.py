@@ -8,7 +8,7 @@ it's never copied to the new file.
 from collections.abc import Collection
 from io import BytesIO
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, UnidentifiedImageError
 
 MAX_SIDE = 1600
 VIEW_SIDE = 900  # what a match gets: enough for a phone, less worth taking
@@ -58,6 +58,23 @@ def pieces(data: bytes, open_pieces: Collection[int], mark: str) -> bytes:
     _watermark(image, mark)
     out = BytesIO()
     image.save(out, "JPEG", quality=82)
+    return out.getvalue()
+
+
+def blurred(data: bytes, tiny: int, side: int) -> bytes:
+    """The photo so coarse that no detail survives: shrunk to `tiny` pixels on its longer
+    side, blown up to `side`, and blurred again so the blocks don't show. Nothing finer
+    than the tiny image can be recovered from it, whatever the viewer does to it.
+    """
+    with Image.open(BytesIO(data)) as source:
+        image = source.convert("RGB")
+    image.thumbnail((tiny, tiny), Image.Resampling.BOX)
+    scale = side / max(image.size)
+    big_size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+    big = image.resize(big_size, Image.Resampling.BICUBIC)
+    big = big.filter(ImageFilter.GaussianBlur(radius=scale * 0.5))
+    out = BytesIO()
+    big.save(out, "JPEG", quality=80)
     return out.getvalue()
 
 
