@@ -12,6 +12,8 @@ from src.chats.models import Message
 from src.chats.schemas import ChatSummary, ChatThread, MessageOut
 from src.matches import service as match_service
 from src.matches.exceptions import MatchNotFound
+from src.notifications import service as notification_service
+from src.notifications.constants import Event
 from src.profiles import service as profile_service
 from src.swaps import service as swap_service
 
@@ -68,6 +70,13 @@ async def send(session: AsyncSession, user: Me, match_id: uuid.UUID, body: str) 
     message = Message(match_id=match.id, sender_id=user.id, body=body)
     await repository.add_message(session, message)
     await repository.set_read(session, match.id, user.id, message.id)
+    await notification_service.notify(
+        session,
+        match.other_user_id,
+        Event.MESSAGE,
+        f"/app/chats/{match.id}",
+        tag=f"chat-{match.id}",
+    )
     await session.commit()
     await session.refresh(message)
     return _out(message, user)

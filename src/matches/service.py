@@ -12,6 +12,8 @@ from src.matches.constants import LikeStatus
 from src.matches.exceptions import AlreadyLiked, LikeAlreadyAnswered, LikeNotFound, MatchNotFound
 from src.matches.models import Like, Match
 from src.matches.schemas import MatchInfo, ReceivedLike
+from src.notifications import service as notification_service
+from src.notifications.constants import Event
 from src.profiles import service as profile_service
 from src.profiles.schemas import PromptOut
 
@@ -53,6 +55,9 @@ async def send_like(
     )
     if status == LikeStatus.MATCHED:
         await repository.add_match(session, *sorted((from_user_id, to_user_id)))
+        await notification_service.notify(session, to_user_id, Event.MATCH, "/app/chats")
+    elif status == LikeStatus.PENDING:
+        await notification_service.notify(session, to_user_id, Event.LIKE, "/app/likes")
     return status == LikeStatus.MATCHED
 
 
@@ -143,6 +148,7 @@ async def match_back(session: AsyncSession, user: Me, like_id: uuid.UUID, now: d
     like.status = LikeStatus.MATCHED
     like.decided_at = now
     await repository.add_match(session, *sorted((like.from_user_id, user.id)))
+    await notification_service.notify(session, like.from_user_id, Event.MATCH, "/app/chats")
     await session.commit()
 
 
