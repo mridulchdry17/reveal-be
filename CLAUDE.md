@@ -22,7 +22,7 @@ A change is done when `ruff`, `pyright` and `pytest` all pass. Show the command 
 
 Installed: Python 3.12, uv, FastAPI, Pydantic v2 + pydantic-settings, SQLAlchemy 2 async (`AsyncSession`) + asyncpg, PostgreSQL 17, Alembic, pytest + pytest-asyncio + `httpx.AsyncClient(transport=ASGITransport(app))`, Ruff, Pyright.
 
-Also installed: Pillow (re-encoding photos). Planned, add with the feature that first needs it (not before): Redis + Arq for jobs (nightly drop, push fan-out), pywebpush (VAPID) for notifications.
+Also installed: Pillow (re-encoding photos), pywebpush (VAPID Web Push). Planned, add with the feature that first needs it (not before): Redis + Arq for jobs, once the VM can run them.
 
 ## Layout: by domain, not by file type
 
@@ -36,6 +36,8 @@ src/
   security.py          require_admin, RateLimiter / limit_by_ip
   media.py             private profile files (photos, voice): Azure Blob via managed identity on servers, a folder locally
   enrollment.py        normalize() / is_valid(): the only enrollment-number rules
+  identity.py          fingerprint() / fingerprint_sql(): how emails, phones and handles are hashed for hide lists
+  jobs.py              the in-process background loop: 9 PM alert + sending pushes
   health/              smallest example of the layers
   waitlist/            first product domain: copy its shape for new ones
   auth/                Google sign-in, bearer sessions (hashed), current_user / admin_user
@@ -48,8 +50,10 @@ src/
   safety/              block and report (both end the match); reports listed for admins
   swaps/               swap requests per match; which cards are open; photo pieces count
   guesses/             POST /v1/guesses/{card_id}: who may guess whose cards (drop, pending like, live match)
+  hides/               hide list: hide people by email, phone or Instagram (fingerprints only); hidden_ids() both ways
+  notifications/       push devices, the outbox, notify() for other domains, deliver(); generic copy only
   clock.py             now() as a dependency, so tests can set the time
-  <domain>/            planned: notifications, moderation
+  <domain>/            planned: moderation
     router.py          HTTP only: parse, call service, return schema
     schemas.py         Pydantic request/response models
     models.py          SQLAlchemy tables
@@ -100,7 +104,9 @@ These are the reason the product exists. Every one needs a test, and a change th
 - Domain errors are exceptions in `<domain>/exceptions.py`, mapped to HTTP in one handler in `src/exceptions.py`. Don't raise `HTTPException` from services.
 - DB: singular snake_case tables, `_at` for timestamps (UTC, tz-aware), `_id` FKs, explicit `MetaData(naming_convention=...)`. Do joins and filtering in SQL, not Python loops.
 - Migrations are reviewed, reversible, never edited after merge. No data backfills inside schema migrations.
-- Anything that must survive a crash or retry (push, image processing) is an Arq job, not `BackgroundTasks`. Exception for now: the drop is built on the first `GET /v1/drops/tonight` after 9 PM and saved (`drop_item`), under a per-viewer advisory lock, and tops up while it has fewer than 5. No Redis/worker until push needs a 9 PM job; `drops.service` stays the one place that picks who's in a drop.
+- Anything that must survive a crash or retry is saved in Postgres first, never `BackgroundTasks`. No Redis/Arq yet (the VM has <1 GB RAM): `src/jobs.py` runs one loop in the API process (started by the lifespan, only when VAPID keys are set, never in tests) that queues the 9 PM alert (`drops.service.alert_tonight`, once per night via `drop_alert`, only 9 PM to midnight) and drains `push_outbox` with `SELECT ... FOR UPDATE SKIP LOCKED`. The drop itself is still built on the first `GET /v1/drops/tonight` after 9 PM and saved (`drop_item`), under a per-viewer advisory lock, and tops up while it has fewer than 5; `drops.service` stays the one place that picks who's in a drop.
+- Push (`notifications`): a device subscribes with `PUT /v1/notifications/subscription` (one row per endpoint; it moves to whoever subscribed last). Domains call `notification_service.notify(session, user_id, Event, url, tag)` inside their own transaction and before commit, so a push exists only if the event does; one waits per user and tag (a chat's messages collapse into one). Copy lives only in `notifications/constants.COPY` and is generic (no names, text or photos). `deliver(session, send)` takes the sender as an argument, so tests pass a fake; 404/410 forget the device, 429/5xx/network retry up to `MAX_ATTEMPTS`. Events: like (to the liked), match (to whoever didn't tap last), message, swap asked, swap opened, 9 PM drop. Passing never notifies.
+- Hide list (`hides`): `POST /v1/hides` takes an email, phone or Instagram handle, normalised like card 7, and stores only `identity.fingerprint` plus a masked hint; adding someone who isn't on Reveal looks the same. `hides.service.hidden_ids(user)` is both directions: my fingerprints against everyone's sign-in/college emails and card-7 contact (in SQL via `fingerprint_sql`), and everyone's lists against mine. Drops (build and show), Likes (list, match back, blurred photo) and guessing (`in_tonight`, `can_see` for a waiting like) all check it. Live matches carry on; block is for those.
 - Drops and likes: `drops.service` asks `profiles.service.drop_candidates` (audience both ways, best fit first) and excludes anyone shown in the last 14 days, ever liked or passed, or with a like either way (`matches.service.connected_ids`). Liking copies the prompt text into `profile_like`; a like back (from the Likes list or the other's drop) creates one `match` row per pair. Passing is silent: the liker is never told. Use `src.clock.now` for the time, never `datetime.now()` in services.
 - Chats: messages live in Postgres (`message`), one table per pair via `match`. Every chat or safety action starts with `matches.service.live_match(user, match_id)`, which treats "not yours", "never existed" and "ended" the same (404). Unmatch, block and report call `matches.service.end` (sets `ended_at`, doesn't commit) so a match ends for both at once; the rows stay for reports. Message text goes through `CleanText` (no numbers, handles, links) until contact swaps exist. Unread = their latest message isn't my `chat_read.last_read_message_id`. The app polls `GET /v1/chats/{id}` every few seconds; no WebSockets yet.
 - Every route sets `response_model` and `status_code`, and lists its error responses with `ErrorResponse`. API docs are off outside `local` and `staging`.
