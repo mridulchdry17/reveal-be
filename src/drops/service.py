@@ -2,8 +2,8 @@
 
 The drop is built the first time someone opens the app after 9 PM, and saved, so a
 refresh or a restart shows the same people. If fewer than DROP_SIZE people fit when it's
-built (early days), it tops up as new people finish their profiles. Push notifications
-will need a 9 PM job; this stays the place that decides who's in a drop.
+built (early days), it tops up as new people finish their profiles. At 9 PM `alert_tonight`
+queues a push for everyone with a finished profile; the drop itself is still built on open.
 """
 
 import uuid
@@ -19,6 +19,8 @@ from src.drops.models import DropItem
 from src.drops.schemas import DropItemOut, LikeRequest, LikeResult, Tonight
 from src.hides import service as hide_service
 from src.matches import service as match_service
+from src.notifications import service as notification_service
+from src.notifications.constants import DROP_ALERT_UNTIL_HOUR
 from src.profiles import service as profile_service
 
 
@@ -31,6 +33,14 @@ def drop_date_for(now: datetime) -> date:
 def next_drop_at(now: datetime) -> datetime:
     opens = datetime.combine(drop_date_for(now) + timedelta(days=1), time(DROP_HOUR), COLLEGE_TZ)
     return opens.astimezone(now.tzinfo)
+
+
+async def alert_tonight(session: AsyncSession, now: datetime) -> int:
+    """Between 9 PM and midnight college time, queue tonight's alert (once a night)."""
+    local = now.astimezone(COLLEGE_TZ)
+    if not DROP_HOUR <= local.hour <= DROP_ALERT_UNTIL_HOUR:
+        return 0
+    return await notification_service.announce_drop(session, drop_date_for(now), "/app/tonight")
 
 
 async def tonight(session: AsyncSession, user: Me, now: datetime) -> Tonight:
