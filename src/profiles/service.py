@@ -166,6 +166,21 @@ async def my_voice(session: AsyncSession, user: Me) -> tuple[bytes, str]:
     return data, voice.VOICE_TYPES[profile.voice_type]
 
 
+async def stored_photo(session: AsyncSession, owner_id: uuid.UUID) -> bytes | None:
+    """The owner's photo file. Only swaps.service calls this, after checking the pair."""
+    profile = await repository.get_for_user(session, owner_id)
+    return await media.get(profile.photo_key) if profile and profile.photo_key else None
+
+
+async def stored_voice(session: AsyncSession, owner_id: uuid.UUID) -> tuple[bytes, str] | None:
+    """The owner's voice note and its MIME type. Only swaps.service calls this."""
+    profile = await repository.get_for_user(session, owner_id)
+    if profile is None or not profile.voice_key or not profile.voice_type:
+        return None
+    data = await media.get(profile.voice_key)
+    return (data, voice.VOICE_TYPES[profile.voice_type]) if data is not None else None
+
+
 async def remove_voice(session: AsyncSession, user: Me) -> MyProfile:
     profile = await _get_or_create(session, user)
     old_key = profile.voice_key
