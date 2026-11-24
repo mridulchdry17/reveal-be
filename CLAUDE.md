@@ -41,14 +41,15 @@ src/
   auth/                Google sign-in, bearer sessions (hashed), current_user / admin_user
   verification/        ID card + selfie review requests; photos as files (storage.py)
   admin/               review queue, approve/reject, let someone in, action log
-  profiles/            basics, 3 prompts, 7 cards, contact (card 7), preferences; what others may see; drop audience
+  profiles/            basics, 3 prompts, 3 guess cards (+ guesses on them), 7 cards, contact (card 7), preferences; what others may see; drop audience
   drops/               tonight's drop: 5 profiles a night at 9 PM, like a prompt or pass
   matches/             likes (Likes list, match back, pass), matches, unmatch
   chats/               messages between matched students, Chats tab list, unread state
   safety/              block and report (both end the match); reports listed for admins
   swaps/               swap requests per match; which cards are open; photo pieces count
+  guesses/             POST /v1/guesses/{card_id}: who may guess whose cards (drop, pending like, live match)
   clock.py             now() as a dependency, so tests can set the time
-  <domain>/            planned: guess, notifications, moderation
+  <domain>/            planned: notifications, moderation
     router.py          HTTP only: parse, call service, return schema
     schemas.py         Pydantic request/response models
     models.py          SQLAlchemy tables
@@ -106,6 +107,7 @@ These are the reason the product exists. Every one needs a test, and a change th
 - Product routes live under `/v1`. A breaking change ships as a new version next to the old one, because installed PWAs keep old code cached.
 - Tables use `UUIDPrimaryKeyMixin` + `TimestampMixin`. Never expose sequential ids.
 - Swaps (`swaps.service`): one `swap` row per request; at most one pending or accepted per card per match (partial unique index), changes serialized per match with an advisory lock. Asking for a card they already asked for accepts it. The service works out the opened cards from live matches and passes them to `profiles.service.public_profiles(..., opened)`, which alone turns them into fields; `ChatThread.swaps` carries each card's state and the open photo pieces (`PIECE_ORDER`: centre column last). Ending a match needs no cleanup: nothing reads swaps of an ended match. Their media: `GET /v1/chats/{id}/photo` is one JPEG (≤900px) with closed pieces painted over and a faint per-viewer mark tiled on (`profiles/photo.pieces`), so closed pixels never leave the server; `GET /v1/chats/{id}/voice` after the voice swap. `profiles.service.stored_photo/stored_voice` return raw files and are called only by `swaps.service` after its checks.
+- Guess cards: every profile has 3 (`PUT /v1/profile/me/guesses`, a required setup step between prompts and cards; a profile is complete only with them, so profiles finished before guess cards count as unfinished until they add them: `profiles.repository._COMPLETE`). Cards and the `guess` rows live in `profiles` because they decide what `public_profiles` shows: a card's answer only to a viewer who has guessed it, `right_guesses`, and `has_blurred_photo`. A card saved unchanged keeps its id and guesses; a changed one is a new row and its guesses go (cascade). `guesses.service` decides who may guess: someone in my drop tonight, whose like waits for me, or a live match (`drops.service.in_tonight`, `matches.service.can_see`); anything else, and my own cards, is 404. One try per card (unique guesser+card, 409 `already_guessed`). Before matching, `GET /v1/drops/tonight/{item_id}/photo` and `GET /v1/likes/{like_id}/photo` return their photo blurred past recognition (`profiles/photo.blurred`, steps in `constants.BLUR_STEPS`, clearer per right guess, never identifiable), only when both have a photo. In a chat, right guesses add photo pieces per viewer (`swaps.service._pieces`).
 - Never reveal whether someone else's data exists. If submitted details clash with another person's entry, answer exactly like a success and save nothing (see `waitlist.service.join`). On a dating app, "is she on it?" must be unanswerable.
 - Signed-in routes use `Depends(current_user)`; admin screens use `Depends(admin_user)` (admins = `ADMIN_EMAILS`). The older `require_admin` (`X-Admin-Token`) is only for scripts like the waitlist CSV export; those routes use `include_in_schema=False`, so they never reach the frontend's generated types.
 - Sign-in: the frontend sends Google's ID token to `POST /v1/auth/google`; we verify it with `google-auth` and return an opaque session token (stored only as SHA-256). Any Google account can sign in; being a verified student is a separate step. Tests override `get_google_verifier`, never call Google.
