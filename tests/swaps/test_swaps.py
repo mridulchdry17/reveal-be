@@ -1,6 +1,8 @@
+from io import BytesIO
 from typing import Any
 
 from httpx import AsyncClient
+from PIL import Image
 
 from tests.drops.helpers import matched_pair
 from tests.profiles.test_photo import jpeg
@@ -208,3 +210,58 @@ async def test_someone_outside_the_match_cannot_swap(client: AsyncClient) -> Non
     meera = await finished(client, "Meera", "woman", "men")
 
     assert (await ask(client, meera, match_id, "first_name")).status_code == 404
+
+
+def pixel(data: bytes, x: float, y: float) -> tuple[int, int, int]:
+    """Colour at a fraction of the image's width and height."""
+    image = Image.open(BytesIO(data)).convert("RGB")
+    return image.getpixel((int(image.width * x), int(image.height * y)))  # type: ignore[return-value]
+
+
+async def test_their_photo_shows_only_open_pieces(client: AsyncClient) -> None:
+    aanya, kabir, match_id = await matched_pair(client)
+    await add_photo(client, aanya)
+    files = {"photo": ("p.jpg", jpeg(900, 900, colour=(20, 120, 220)), "image/jpeg")}
+    await client.put("/v1/profile/me/photo", files=files, headers=kabir)
+    url = f"/v1/chats/{match_id}/photo"
+
+    assert (await client.get(url, headers=aanya)).status_code == 404
+
+    await swap(client, aanya, kabir, match_id, "first_name")  # opens piece 6: bottom left
+    response = await client.get(url, headers=aanya)
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store, private"
+    blue = pixel(response.content, 1 / 6 - 0.05, 5 / 6 + 0.05)
+    centre = pixel(response.content, 0.5, 0.5)
+    assert blue[2] > 180 and blue[0] < 80  # open piece: the photo
+    assert abs(centre[0] - 234) < 12 and abs(centre[2] - 211) < 12  # closed: painted over
+    assert max(Image.open(BytesIO(response.content)).size) <= 900
+
+
+async def test_their_voice_plays_only_after_the_voice_swap(client: AsyncClient) -> None:
+    aanya, kabir, match_id = await matched_pair(client)
+    await add_voice(client, aanya)
+    await add_voice(client, kabir)
+    url = f"/v1/chats/{match_id}/voice"
+
+    assert (await client.get(url, headers=aanya)).status_code == 404
+    await swap(client, aanya, kabir, match_id, "voice")
+    response = await client.get(url, headers=aanya)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "audio/webm"
+
+
+async def test_photo_and_voice_close_when_the_match_ends(client: AsyncClient) -> None:
+    aanya, kabir, match_id = await matched_pair(client)
+    for headers in (aanya, kabir):
+        await add_photo(client, headers)
+        await add_voice(client, headers)
+    await swap(client, aanya, kabir, match_id, "voice")
+    await swap(client, aanya, kabir, match_id, "photo")
+
+    await client.post(f"/v1/matches/{match_id}/block", headers=kabir)
+
+    assert (await client.get(f"/v1/chats/{match_id}/photo", headers=aanya)).status_code == 404
+    assert (await client.get(f"/v1/chats/{match_id}/voice", headers=aanya)).status_code == 404

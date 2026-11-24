@@ -11,3 +11,9 @@ class SwapNotFound(NotFound):
     """No request from them for this card."""
 
     code = "swap_not_found"
+
+
+class NothingOpenYet(NotFound):
+    """No pieces of their photo, or not their voice note, are open to this viewer."""
+
+    code = "nothing_open_yet"
