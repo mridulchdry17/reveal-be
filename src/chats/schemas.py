@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from src.chats.constants import MESSAGE_MAX
 from src.profiles.schemas import CleanText, PublicProfile
+from src.swaps.schemas import SwapBoard
 
 
 class SendMessage(BaseModel):
@@ -34,3 +35,4 @@ class ChatThread(BaseModel):
     profile: PublicProfile
     matched_at: datetime
     messages: list[MessageOut] = Field(description="Oldest first, up to the latest 200")
+    swaps: SwapBoard
