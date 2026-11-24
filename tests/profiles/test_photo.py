@@ -22,8 +22,14 @@ def _fake_google() -> Iterator[None]:
     app.dependency_overrides.pop(get_google_verifier, None)
 
 
-def jpeg(width: int = 3000, height: int = 2000, *, gps: bool = False) -> bytes:
-    image = Image.new("RGB", (width, height), (200, 120, 90))
+def jpeg(
+    width: int = 3000,
+    height: int = 2000,
+    *,
+    gps: bool = False,
+    colour: tuple[int, int, int] = (200, 120, 90),
+) -> bytes:
+    image = Image.new("RGB", (width, height), colour)
     exif = Image.Exif()
     if gps:
         exif[0x8825] = {2: (28.0, 36.0, 0.0), 4: (77.0, 12.0, 0.0)}  # GPSInfo

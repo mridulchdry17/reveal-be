@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import verified_user
@@ -14,7 +14,7 @@ from src.schemas import ErrorResponse
 from src.swaps import service
 from src.swaps.schemas import ProposeSwap, SwapBoard
 
-router = APIRouter(prefix="/chats/{match_id}/swaps", tags=["swaps"])
+router = APIRouter(prefix="/chats/{match_id}", tags=["swaps"])
 
 _ERRORS: dict[int | str, dict[str, Any]] = {
     401: {"model": ErrorResponse, "description": "Not signed in"},
@@ -29,7 +29,7 @@ Now = Annotated[datetime, Depends(now)]
 
 
 @router.post(
-    "",
+    "/swaps",
     response_model=SwapBoard,
     status_code=status.HTTP_200_OK,
     summary="Ask to swap a card (says yes if they already asked for it)",
@@ -42,7 +42,7 @@ async def propose(
 
 
 @router.post(
-    "/{card}/accept",
+    "/swaps/{card}/accept",
     response_model=SwapBoard,
     status_code=status.HTTP_200_OK,
     summary="Swap: open this card for both of us",
@@ -55,7 +55,7 @@ async def accept(
 
 
 @router.post(
-    "/{card}/decline",
+    "/swaps/{card}/decline",
     response_model=SwapBoard,
     status_code=status.HTTP_200_OK,
     summary="Not yet: nothing opens",
@@ -65,3 +65,37 @@ async def decline(
     match_id: uuid.UUID, card: Card, user: Student, session: Session, at: Now
 ) -> SwapBoard:
     return await service.decline(session, user, match_id, card, at)
+
+
+_MEDIA_ERRORS: dict[int | str, dict[str, Any]] = {
+    **{k: v for k, v in _ERRORS.items() if k != 409},
+    404: {"model": ErrorResponse, "description": "No such live match, or nothing open yet"},
+}
+_NO_STORE = {"Cache-Control": "no-store, private"}
+
+
+@router.get(
+    "/photo",
+    response_class=Response,
+    status_code=status.HTTP_200_OK,
+    summary="Their photo: only the open pieces, marked for me (JPEG, never cached)",
+    responses={**_MEDIA_ERRORS, 200: {"content": {"image/jpeg": {}}, "description": "Photo"}},
+)
+async def their_photo(match_id: uuid.UUID, user: Student, session: Session) -> Response:
+    data = await service.their_photo(session, user, match_id)
+    return Response(data, media_type="image/jpeg", headers=_NO_STORE)
+
+
+@router.get(
+    "/voice",
+    response_class=Response,
+    status_code=status.HTTP_200_OK,
+    summary="Their voice note, after we've swapped voice notes (never cached)",
+    responses={
+        **_MEDIA_ERRORS,
+        200: {"content": {"audio/webm": {}, "audio/mp4": {}}, "description": "Recording"},
+    },
+)
+async def their_voice(match_id: uuid.UUID, user: Student, session: Session) -> Response:
+    data, media_type = await service.their_voice(session, user, match_id)
+    return Response(data, media_type=media_type, headers=_NO_STORE)

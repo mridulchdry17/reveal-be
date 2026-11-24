@@ -14,12 +14,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.schemas import Me
 from src.matches import service as match_service
 from src.matches.schemas import MatchInfo
+from src.profiles import photo
 from src.profiles import service as profile_service
 from src.profiles.constants import Card
 from src.profiles.schemas import OwnedCards
@@ -34,7 +36,7 @@ from src.swaps.constants import (
     CardState,
     SwapStatus,
 )
-from src.swaps.exceptions import SwapNotAllowed, SwapNotFound
+from src.swaps.exceptions import NothingOpenYet, SwapNotAllowed, SwapNotFound
 from src.swaps.models import Swap
 from src.swaps.schemas import CardSwap, SwapBoard
 
@@ -119,6 +121,33 @@ async def decline(
     swap.decided_at = now
     await session.commit()
     return await board(session, user.id, match)
+
+
+async def their_photo(session: AsyncSession, user: Me, match_id: uuid.UUID) -> bytes:
+    """Their photo with only the open pieces visible, marked for this viewer."""
+    match = await match_service.live_match(session, user.id, match_id)
+    open_pieces = _pieces(await _pair(session, user.id, match))
+    data = await profile_service.stored_photo(session, match.other_user_id) if open_pieces else None
+    if data is None:
+        raise NothingOpenYet("None of their photo is open yet")
+    return await run_in_threadpool(photo.pieces, data, open_pieces, _mark(user.id, match.id))
+
+
+async def their_voice(session: AsyncSession, user: Me, match_id: uuid.UUID) -> tuple[bytes, str]:
+    """Their voice note, once we've swapped voice notes."""
+    match = await match_service.live_match(session, user.id, match_id)
+    pair = await _pair(session, user.id, match)
+    stored = None
+    if Card.VOICE in pair.accepted:
+        stored = await profile_service.stored_voice(session, match.other_user_id)
+    if stored is None:
+        raise NothingOpenYet("Their voice note isn't open yet")
+    return stored
+
+
+def _mark(viewer_id: uuid.UUID, match_id: uuid.UUID) -> str:
+    """Short and stable per viewer and match; admins can trace a leaked image with it."""
+    return f"reveal {viewer_id.hex[:6]}{match_id.hex[:4]}"
 
 
 def _accept(swap: Swap, now: datetime) -> None:
