@@ -21,5 +21,6 @@ class SwapBoard(BaseModel):
     )
     photo_pieces: list[int] = Field(
         description="Open pieces of their photo (0-8, row by row in a 3x3 grid). "
-        "Empty unless both have a photo."
+        "Empty unless both have a photo. One per card swap plus one per right guess on "
+        "their cards, up to 6; all 9 after the photo swap."
     )
