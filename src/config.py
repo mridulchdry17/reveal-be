@@ -46,6 +46,17 @@ class Settings(BaseSettings):
     voice_note_max_bytes: int = 1_000_000
     media_uploads_per_ip_per_hour: int = 30
 
+    # Web Push (VAPID). Without a private key, nothing is queued or sent and the app hides
+    # the notifications switch. Generate a pair with scripts/vapid_keys.py.
+    vapid_public_key: str = ""
+    vapid_private_key: SecretStr = SecretStr("")
+    # Push services want a way to reach whoever sends: a mailto: or the site's URL.
+    vapid_subject: str = "https://reveal-api.koreacentral.cloudapp.azure.com"
+
+    @property
+    def push_enabled(self) -> bool:
+        return bool(self.vapid_public_key and self.vapid_private_key.get_secret_value())
+
     @property
     def show_docs(self) -> bool:
         return self.environment in ("local", "staging")
