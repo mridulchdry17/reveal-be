@@ -1,9 +1,8 @@
 import re
 import uuid
 from datetime import datetime
-from typing import Self
 
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, ValidationInfo, field_validator
 
 from src.identity import IdentityKind
 from src.profiles.constants import ContactKind
@@ -18,21 +17,23 @@ class HideRequest(BaseModel):
     kind: IdentityKind
     value: str = Field(min_length=1, max_length=320)
 
-    @model_validator(mode="after")
-    def _normalize(self) -> Self:
-        raw = self.value.strip()
-        if self.kind == IdentityKind.EMAIL:
+    @field_validator("value")
+    @classmethod
+    def _normalize(cls, value: str, info: ValidationInfo) -> str:
+        raw = value.strip()
+        kind = info.data.get("kind")
+        if kind == IdentityKind.EMAIL:
             email = raw.lower()
             if not _EMAIL.fullmatch(email):
                 raise ValueError("That doesn't look like an email address")
-            self.value = email
-            return self
+            return email
+        if kind is None:  # kind itself was invalid; that error is enough
+            return raw
         # Phone numbers and handles follow the same rules as card 7, so they match it.
         try:
-            self.value = Contact(kind=ContactKind(self.kind), value=raw).value
+            return Contact(kind=ContactKind(kind), value=raw).value
         except ValidationError as error:
             raise ValueError(error.errors()[0]["msg"].removeprefix("Value error, ")) from None
-        return self
 
 
 class HiddenOut(BaseModel):

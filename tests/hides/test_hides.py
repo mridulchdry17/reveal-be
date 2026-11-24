@@ -131,7 +131,9 @@ async def test_someone_elses_entry_looks_missing(client: AsyncClient) -> None:
 )
 async def test_bad_values_are_rejected(client: AsyncClient, kind: str, value: str) -> None:
     aanya = await finished(client, "Aanya", "woman", "men")
-    assert (await hide(client, aanya, kind, value)).status_code == 422
+    response = await hide(client, aanya, kind, value)
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "value"]
 
 
 async def test_list_has_a_limit(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
