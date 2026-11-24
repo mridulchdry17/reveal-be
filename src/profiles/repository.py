@@ -1,11 +1,12 @@
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import Integer, and_, case, delete, exists, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
+from src.identity import fingerprint_sql
 from src.profiles.models import Guess, GuessCard, Profile, ProfilePrompt
 
 # Finished once (completed_at) and has guess cards: profiles finished before guess cards
@@ -92,6 +93,19 @@ async def candidates(session: AsyncSession, audience: Audience, limit: int) -> l
     if a.exclude:
         query = query.where(Profile.user_id.not_in(a.exclude))
     return list(await session.scalars(query))
+
+
+async def ids_with_contact_fingerprints(
+    session: AsyncSession, fingerprints: Collection[str]
+) -> list[uuid.UUID]:
+    """Owners whose card-7 contact (phone or Instagram) has one of these fingerprints."""
+    rows = await session.scalars(
+        select(Profile.user_id).where(
+            Profile.contact_value.is_not(None),
+            fingerprint_sql(Profile.contact_kind, Profile.contact_value).in_(list(fingerprints)),
+        )
+    )
+    return list(rows)
 
 
 async def prompts(session: AsyncSession, profile_id: uuid.UUID) -> list[ProfilePrompt]:

@@ -319,6 +319,22 @@ async def public_profiles(
     }
 
 
+async def contact_of(session: AsyncSession, user_id: uuid.UUID) -> tuple[str, str] | None:
+    """Their card-7 contact as (kind, value), for matching hide lists. Never shown."""
+    profile = await repository.get_for_user(session, user_id)
+    if profile is None or not profile.contact_kind or not profile.contact_value:
+        return None
+    return profile.contact_kind, profile.contact_value
+
+
+async def ids_with_contact_fingerprints(
+    session: AsyncSession, fingerprints: Collection[str]
+) -> list[uuid.UUID]:
+    if not fingerprints:
+        return []
+    return await repository.ids_with_contact_fingerprints(session, fingerprints)
+
+
 async def guess_card_owner(session: AsyncSession, card_id: uuid.UUID) -> uuid.UUID | None:
     """Whose guess card this is, or None if there's no such card."""
     found = await repository.guess_card_with_owner(session, card_id)

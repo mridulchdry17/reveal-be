@@ -1,10 +1,12 @@
 import uuid
+from collections.abc import Collection
 from datetime import datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.models import AuthSession, UserAccount
+from src.identity import IdentityKind, fingerprint_sql
 
 
 async def get_user_by_google_sub(session: AsyncSession, google_sub: str) -> UserAccount | None:
@@ -25,6 +27,22 @@ async def get_user_by_email(session: AsyncSession, email: str) -> UserAccount | 
 
 async def get_users(session: AsyncSession, user_ids: list[uuid.UUID]) -> list[UserAccount]:
     return list(await session.scalars(select(UserAccount).where(UserAccount.id.in_(user_ids))))
+
+
+async def ids_with_email_fingerprints(
+    session: AsyncSession, fingerprints: Collection[str]
+) -> list[uuid.UUID]:
+    """Accounts whose sign-in or college email has one of these fingerprints."""
+    fps = list(fingerprints)
+    rows = await session.scalars(
+        select(UserAccount.id).where(
+            or_(
+                fingerprint_sql(IdentityKind.EMAIL, UserAccount.email).in_(fps),
+                fingerprint_sql(IdentityKind.EMAIL, UserAccount.college_email).in_(fps),
+            )
+        )
+    )
+    return list(rows)
 
 
 async def add(session: AsyncSession, row: UserAccount | AuthSession) -> None:
