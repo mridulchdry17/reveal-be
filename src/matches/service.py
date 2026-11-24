@@ -6,11 +6,14 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.schemas import Me
+from src.hides import service as hide_service
 from src.matches import repository
 from src.matches.constants import LikeStatus
 from src.matches.exceptions import AlreadyLiked, LikeAlreadyAnswered, LikeNotFound, MatchNotFound
 from src.matches.models import Like, Match
 from src.matches.schemas import MatchInfo, ReceivedLike
+from src.notifications import service as notification_service
+from src.notifications.constants import Event
 from src.profiles import service as profile_service
 from src.profiles.schemas import PromptOut
 
@@ -52,6 +55,9 @@ async def send_like(
     )
     if status == LikeStatus.MATCHED:
         await repository.add_match(session, *sorted((from_user_id, to_user_id)))
+        await notification_service.notify(session, to_user_id, Event.MATCH, "/app/chats")
+    elif status == LikeStatus.PENDING:
+        await notification_service.notify(session, to_user_id, Event.LIKE, "/app/likes")
     return status == LikeStatus.MATCHED
 
 
@@ -94,7 +100,7 @@ async def can_see(session: AsyncSession, viewer_id: uuid.UUID, owner_id: uuid.UU
     """The owner liked the viewer and is waiting for an answer, or they're matched now."""
     like = await repository.get_like(session, owner_id, viewer_id)
     if like is not None and like.status == LikeStatus.PENDING:
-        return True
+        return not await hide_service.is_hidden(session, viewer_id, owner_id)
     return await repository.live_match_between(session, viewer_id, owner_id) is not None
 
 
@@ -102,6 +108,8 @@ async def blurred_photo(session: AsyncSession, user: Me, like_id: uuid.UUID) -> 
     """The blurred photo of someone whose like is waiting for me."""
     like = await repository.get_like_by_id(session, like_id)
     if like is None or like.to_user_id != user.id or like.status != LikeStatus.PENDING:
+        raise LikeNotFound
+    if await hide_service.is_hidden(session, user.id, like.from_user_id):
         raise LikeNotFound
     return await profile_service.blurred_photo(session, user.id, like.from_user_id)
 
@@ -112,7 +120,12 @@ async def connected_ids(session: AsyncSession, user_id: uuid.UUID) -> list[uuid.
 
 
 async def received_likes(session: AsyncSession, user: Me) -> list[ReceivedLike]:
-    likes = await repository.likes_to(session, user.id, LikeStatus.PENDING)
+    hidden = await hide_service.hidden_ids(session, user.id)
+    likes = [
+        like
+        for like in await repository.likes_to(session, user.id, LikeStatus.PENDING)
+        if like.from_user_id not in hidden
+    ]
     profiles = await profile_service.public_profiles(
         session, user.id, [like.from_user_id for like in likes]
     )
@@ -135,6 +148,7 @@ async def match_back(session: AsyncSession, user: Me, like_id: uuid.UUID, now: d
     like.status = LikeStatus.MATCHED
     like.decided_at = now
     await repository.add_match(session, *sorted((like.from_user_id, user.id)))
+    await notification_service.notify(session, like.from_user_id, Event.MATCH, "/app/chats")
     await session.commit()
 
 
@@ -150,6 +164,8 @@ async def _waiting_for(session: AsyncSession, user: Me, like_id: uuid.UUID) -> L
     like = await repository.get_like_by_id(session, like_id)
     # Someone else's like looks exactly like a missing one.
     if like is None or like.to_user_id != user.id:
+        raise LikeNotFound
+    if await hide_service.is_hidden(session, user.id, like.from_user_id):
         raise LikeNotFound
     if like.status != LikeStatus.PENDING:
         raise LikeAlreadyAnswered

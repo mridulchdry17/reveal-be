@@ -22,6 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.schemas import Me
 from src.matches import service as match_service
 from src.matches.schemas import MatchInfo
+from src.notifications import service as notification_service
+from src.notifications.constants import Event
 from src.profiles import photo
 from src.profiles import service as profile_service
 from src.profiles.constants import Card
@@ -80,7 +82,9 @@ async def propose(
     state = _state(pair, card)
     if state == CardState.THEY_ASKED:
         _accept(pair.pending[card], now)
+        event = Event.SWAP_OPENED
     elif state == CardState.CAN_ASK:
+        event = Event.SWAP_ASKED
         swap = Swap(match_id=match.id, card=card, proposed_by_id=user.id, status=SwapStatus.PENDING)
         try:
             await repository.add(session, swap)
@@ -88,6 +92,7 @@ async def propose(
             raise SwapNotAllowed("That card can't be swapped right now") from error
     else:
         raise SwapNotAllowed("That card can't be swapped right now")
+    await _tell(session, match, event)
     await session.commit()
     return await board(session, user.id, match)
 
@@ -105,6 +110,7 @@ async def accept(
         # Asked earlier, but since then one of them removed the card (or never had it).
         raise SwapNotAllowed("That card can't be swapped right now")
     _accept(pair.pending[card], now)
+    await _tell(session, match, Event.SWAP_OPENED)
     await session.commit()
     return await board(session, user.id, match)
 
@@ -145,6 +151,13 @@ async def their_voice(session: AsyncSession, user: Me, match_id: uuid.UUID) -> t
     if stored is None:
         raise NothingOpenYet("Their voice note isn't open yet")
     return stored
+
+
+async def _tell(session: AsyncSession, match: MatchInfo, event: Event) -> None:
+    url = f"/app/chats/{match.id}"
+    await notification_service.notify(
+        session, match.other_user_id, event, url, tag=f"swap-{match.id}"
+    )
 
 
 def _mark(viewer_id: uuid.UUID, match_id: uuid.UUID) -> str:

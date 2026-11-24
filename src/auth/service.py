@@ -1,6 +1,7 @@
 import hashlib
 import secrets
 import uuid
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
@@ -88,6 +89,22 @@ async def find_account(session: AsyncSession, email: str) -> Me | None:
 
 async def accounts(session: AsyncSession, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, Me]:
     return {u.id: _to_me(u) for u in await repository.get_users(session, user_ids)}
+
+
+async def emails_of(session: AsyncSession, user_id: uuid.UUID) -> list[str]:
+    """The emails someone could know this person by: their Google one and college one."""
+    user = await repository.get_user(session, user_id)
+    if user is None:
+        return []
+    return [e for e in (user.email, user.college_email) if e]
+
+
+async def ids_with_email_fingerprints(
+    session: AsyncSession, fingerprints: Collection[str]
+) -> list[uuid.UUID]:
+    if not fingerprints:
+        return []
+    return await repository.ids_with_email_fingerprints(session, fingerprints)
 
 
 def is_college_account(identity: GoogleIdentity) -> bool:
