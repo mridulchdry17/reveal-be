@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import verified_user
@@ -53,6 +53,22 @@ async def match_back(like_id: uuid.UUID, user: Student, session: Session, at: No
 )
 async def pass_like(like_id: uuid.UUID, user: Student, session: Session, at: Now) -> None:
     await service.pass_like(session, user, like_id, at)
+
+
+@router.get(
+    "/{like_id}/photo",
+    response_class=Response,
+    status_code=status.HTTP_200_OK,
+    summary="Their photo, heavily blurred; clearer with each right guess (JPEG, never cached)",
+    responses={
+        **_ERRORS,
+        200: {"content": {"image/jpeg": {}}, "description": "Blurred photo"},
+        404: {"model": ErrorResponse, "description": "No such like for you, or no photo to show"},
+    },
+)
+async def blurred_photo(like_id: uuid.UUID, user: Student, session: Session) -> Response:
+    data = await service.blurred_photo(session, user, like_id)
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-store, private"})
 
 
 matches_router = APIRouter(prefix="/matches", tags=["matches"])

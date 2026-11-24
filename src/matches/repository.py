@@ -59,6 +59,15 @@ async def live_match(
     return await session.scalar(select(Match).where(Match.id == match_id, _mine(user_id)))
 
 
+async def live_match_between(
+    session: AsyncSession, user_id: uuid.UUID, other_id: uuid.UUID
+) -> Match | None:
+    a, b = sorted((user_id, other_id))
+    return await session.scalar(
+        select(Match).where(Match.user_a_id == a, Match.user_b_id == b, Match.ended_at.is_(None))
+    )
+
+
 async def connected_ids(session: AsyncSession, user_id: uuid.UUID) -> list[uuid.UUID]:
     """Everyone with a like in either direction. Every match starts from a like."""
     rows = await session.execute(

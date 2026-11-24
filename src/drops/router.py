@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import verified_user
@@ -57,3 +57,19 @@ async def like(
 )
 async def pass_on(item_id: uuid.UUID, user: Student, session: Session, at: Now) -> None:
     await service.pass_on(session, user, item_id, at)
+
+
+@router.get(
+    "/tonight/{item_id}/photo",
+    response_class=Response,
+    status_code=status.HTTP_200_OK,
+    summary="Their photo, heavily blurred; clearer with each right guess (JPEG, never cached)",
+    responses={
+        **{k: v for k, v in _ERRORS.items() if k != 409},
+        200: {"content": {"image/jpeg": {}}, "description": "Blurred photo"},
+        404: {"model": ErrorResponse, "description": "Not in your drop, or no photo to show"},
+    },
+)
+async def blurred_photo(item_id: uuid.UUID, user: Student, session: Session, at: Now) -> Response:
+    data = await service.blurred_photo(session, user, item_id, at)
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "no-store, private"})

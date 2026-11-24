@@ -175,7 +175,7 @@ async def right_guess_counts(
         .where(Profile.user_id.in_(owner_ids), Guess.guesser_id == guesser_id, Guess.correct)
         .group_by(Profile.user_id)
     )
-    return {user_id: count for user_id, count in rows.tuples()}
+    return {user_id: count for user_id, count in rows}
 
 
 async def add_guess(session: AsyncSession, guess: Guess) -> None:
