@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, SmallInteger, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, SmallInteger, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -53,3 +53,37 @@ class ProfilePrompt(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     position: Mapped[int] = mapped_column(SmallInteger)
     question: Mapped[str] = mapped_column(String(60))
     answer: Mapped[str] = mapped_column(String(120))
+
+
+class GuessCard(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """One of a profile's three guess cards: a question, three options, the true one.
+
+    Others guess it once each (Guess). Changing a card makes a new row, so old guesses on it
+    go with the old row.
+    """
+
+    __tablename__ = "guess_card"
+
+    profile_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("profile.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(SmallInteger)
+    kind: Mapped[str] = mapped_column(String(20))
+    question: Mapped[str] = mapped_column(String(90))
+    options: Mapped[list[str]] = mapped_column(ARRAY(String(40)))
+    # Index into options. Shown to a viewer only after they've guessed this card.
+    answer: Mapped[int] = mapped_column(SmallInteger)
+
+
+class Guess(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """One viewer's one try at someone's guess card. Right guesses unblur their photo."""
+
+    __tablename__ = "guess"
+    __table_args__ = (UniqueConstraint("guesser_id", "card_id"),)
+
+    guesser_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_account.id", ondelete="CASCADE"))
+    card_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("guess_card.id", ondelete="CASCADE"), index=True
+    )
+    picked: Mapped[int] = mapped_column(SmallInteger)
+    correct: Mapped[bool] = mapped_column(Boolean)
