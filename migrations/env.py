@@ -10,6 +10,7 @@ import src.admin.models
 import src.auth.models
 import src.chats.models
 import src.drops.models
+import src.hides.models
 import src.matches.models
 import src.profiles.models
 import src.safety.models

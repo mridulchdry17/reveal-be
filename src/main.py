@@ -9,6 +9,7 @@ from src.drops.router import router as drops_router
 from src.exceptions import DomainError, domain_error_handler
 from src.guesses.router import router as guesses_router
 from src.health.router import router as health_router
+from src.hides.router import router as hides_router
 from src.matches.router import matches_router
 from src.matches.router import router as likes_router
 from src.profiles.router import router as profiles_router
@@ -44,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(matches_router, prefix=API_V1)
     app.include_router(chats_router, prefix=API_V1)
     app.include_router(safety_router, prefix=API_V1)
+    app.include_router(hides_router, prefix=API_V1)
     app.include_router(swaps_router, prefix=API_V1)
     app.include_router(guesses_router, prefix=API_V1)
     app.include_router(profiles_router, prefix=API_V1)
