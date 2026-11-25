@@ -77,13 +77,13 @@ async def like(
 ) -> LikeResult:
     item = await _open_item(session, user, item_id, now)
     liked = await _liked(session, user.id, item.shown_user_id, body)
-    matched = await match_service.send_like(
+    match_id = await match_service.send_like(
         session, user.id, item.shown_user_id, liked, body.comment, now
     )
     item.decision = Decision.LIKED
     item.decided_at = now
     await session.commit()
-    return LikeResult(matched=matched)
+    return LikeResult(matched=match_id is not None, match_id=match_id)
 
 
 async def _liked(

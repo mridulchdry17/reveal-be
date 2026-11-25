@@ -10,7 +10,7 @@ from src.auth.schemas import Me
 from src.clock import now
 from src.database import get_session
 from src.matches import service
-from src.matches.schemas import ReceivedLike
+from src.matches.schemas import MatchResult, ReceivedLike
 from src.schemas import ErrorResponse
 
 router = APIRouter(prefix="/likes", tags=["likes"])
@@ -37,12 +37,13 @@ async def received_likes(user: Student, session: Session) -> list[ReceivedLike]:
 
 @router.post(
     "/{like_id}/match",
-    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=MatchResult,
+    status_code=status.HTTP_200_OK,
     summary="Like them back: it's a match",
     responses=_ANSWER_ERRORS,
 )
-async def match_back(like_id: uuid.UUID, user: Student, session: Session, at: Now) -> None:
-    await service.match_back(session, user, like_id, at)
+async def match_back(like_id: uuid.UUID, user: Student, session: Session, at: Now) -> MatchResult:
+    return await service.match_back(session, user, like_id, at)
 
 
 @router.post(

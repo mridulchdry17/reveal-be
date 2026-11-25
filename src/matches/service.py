@@ -11,7 +11,7 @@ from src.matches import repository
 from src.matches.constants import LikedKind, LikeStatus
 from src.matches.exceptions import AlreadyLiked, LikeAlreadyAnswered, LikeNotFound, MatchNotFound
 from src.matches.models import Like, Match
-from src.matches.schemas import Liked, MatchInfo, ReceivedLike
+from src.matches.schemas import Liked, MatchInfo, MatchResult, ReceivedLike
 from src.notifications import service as notification_service
 from src.notifications.constants import Event
 from src.profiles import service as profile_service
@@ -25,8 +25,9 @@ async def send_like(
     liked: Liked,
     comment: str | None,
     now: datetime,
-) -> bool:
-    """Like a prompt or guess card. Returns True if it's a match. Doesn't commit.
+) -> uuid.UUID | None:
+    """Like a prompt or guess card. Returns the new match's id if it's a match. Doesn't
+    commit: the caller does.
 
     If they had already liked me, this is a match straight away. If they had passed on me,
     my like is quietly filed as passed so it never reaches them again.
@@ -56,11 +57,12 @@ async def send_like(
         ),
     )
     if status == LikeStatus.MATCHED:
-        await repository.add_match(session, *sorted((from_user_id, to_user_id)))
+        match_id = await repository.add_match(session, *sorted((from_user_id, to_user_id)))
         await notification_service.notify(session, to_user_id, Event.MATCH, "/app/chats")
-    elif status == LikeStatus.PENDING:
+        return match_id
+    if status == LikeStatus.PENDING:
         await notification_service.notify(session, to_user_id, Event.LIKE, "/app/likes")
-    return status == LikeStatus.MATCHED
+    return None
 
 
 async def live_matches(session: AsyncSession, user_id: uuid.UUID) -> list[MatchInfo]:
@@ -146,13 +148,16 @@ async def received_likes(session: AsyncSession, user: Me) -> list[ReceivedLike]:
     ]
 
 
-async def match_back(session: AsyncSession, user: Me, like_id: uuid.UUID, now: datetime) -> None:
+async def match_back(
+    session: AsyncSession, user: Me, like_id: uuid.UUID, now: datetime
+) -> MatchResult:
     like = await _waiting_for(session, user, like_id)
     like.status = LikeStatus.MATCHED
     like.decided_at = now
-    await repository.add_match(session, *sorted((like.from_user_id, user.id)))
+    match_id = await repository.add_match(session, *sorted((like.from_user_id, user.id)))
     await notification_service.notify(session, like.from_user_id, Event.MATCH, "/app/chats")
     await session.commit()
+    return MatchResult(match_id=match_id)
 
 
 async def pass_like(session: AsyncSession, user: Me, like_id: uuid.UUID, now: datetime) -> None:

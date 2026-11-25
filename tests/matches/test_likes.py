@@ -42,7 +42,7 @@ async def test_a_like_reaches_them_with_the_prompt_and_comment(client: AsyncClie
     response = await like(client, aanya, await first_item(client, aanya), "Maggi at 2am?")
 
     assert response.status_code == 200
-    assert response.json() == {"matched": False}
+    assert response.json() == {"matched": False, "match_id": None}
     [received] = await likes(client, kabir)
     assert received["prompt_question"] == "Hot take"
     assert received["prompt_answer"] == "Maggi is a full meal"
@@ -86,9 +86,11 @@ async def test_liking_back_is_a_match(client: AsyncClient) -> None:
 
     response = await client.post(f"/v1/likes/{received['id']}/match", headers=kabir)
 
-    assert response.status_code == 204
+    assert response.status_code == 200
     assert await likes(client, kabir) == []
     assert await match_count() == 1
+    [chat] = (await client.get("/v1/chats", headers=kabir)).json()
+    assert response.json() == {"match_id": chat["match_id"]}
 
 
 async def test_liking_each_other_from_both_drops_is_a_match(client: AsyncClient) -> None:
@@ -97,8 +99,10 @@ async def test_liking_each_other_from_both_drops_is_a_match(client: AsyncClient)
     aanyas_item = await first_item(client, aanya)
     kabirs_item = await first_item(client, kabir)
 
-    assert (await like(client, aanya, aanyas_item)).json() == {"matched": False}
-    assert (await like(client, kabir, kabirs_item)).json() == {"matched": True}
+    assert (await like(client, aanya, aanyas_item)).json() == {"matched": False, "match_id": None}
+    result = (await like(client, kabir, kabirs_item)).json()
+    [chat] = (await client.get("/v1/chats", headers=kabir)).json()
+    assert result == {"matched": True, "match_id": chat["match_id"]}
     assert await likes(client, aanya) == []
     assert await likes(client, kabir) == []
     assert await match_count() == 1
@@ -116,7 +120,7 @@ async def test_passing_on_a_like_is_silent_and_final(client: AsyncClient) -> Non
     assert response.status_code == 204
     assert await likes(client, kabir) == []
     # Even if he later likes her from his drop, it's not a match and she isn't told.
-    assert (await like(client, kabir, kabirs_item)).json() == {"matched": False}
+    assert (await like(client, kabir, kabirs_item)).json()["matched"] is False
     assert await likes(client, aanya) == []
     assert await match_count() == 0
 

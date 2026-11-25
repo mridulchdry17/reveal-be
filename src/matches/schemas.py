@@ -25,6 +25,10 @@ class MatchInfo(BaseModel):
     matched_at: datetime
 
 
+class MatchResult(BaseModel):
+    match_id: uuid.UUID = Field(description="The new chat: GET /v1/chats/{match_id}")
+
+
 class ReceivedLike(BaseModel):
     """Someone who liked me and is waiting for an answer."""
 

@@ -33,13 +33,19 @@ async def add_like(session: AsyncSession, like: Like) -> None:
     await session.flush()
 
 
-async def add_match(session: AsyncSession, user_a_id: uuid.UUID, user_b_id: uuid.UUID) -> None:
-    """Idempotent: if both liked back at the same moment, the pair still matches once."""
+async def add_match(session: AsyncSession, user_a_id: uuid.UUID, user_b_id: uuid.UUID) -> uuid.UUID:
+    """Idempotent: if both liked back at the same moment, the pair still matches once.
+
+    Returns the pair's match id either way."""
     await session.execute(
         insert(Match)
         .values(id=uuid.uuid4(), user_a_id=user_a_id, user_b_id=user_b_id)
         .on_conflict_do_nothing(index_elements=["user_a_id", "user_b_id"])
     )
+    found = await session.execute(
+        select(Match.id).where(Match.user_a_id == user_a_id, Match.user_b_id == user_b_id)
+    )
+    return found.scalar_one()
 
 
 def _mine(user_id: uuid.UUID):

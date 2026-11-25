@@ -43,3 +43,6 @@ class LikeRequest(BaseModel):
 
 class LikeResult(BaseModel):
     matched: bool = Field(description="They had already liked you: it's a match")
+    match_id: uuid.UUID | None = Field(
+        default=None, description="The new chat when matched: GET /v1/chats/{match_id}"
+    )
