@@ -8,25 +8,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.schemas import Me
 from src.hides import service as hide_service
 from src.matches import repository
-from src.matches.constants import LikeStatus
+from src.matches.constants import LikedKind, LikeStatus
 from src.matches.exceptions import AlreadyLiked, LikeAlreadyAnswered, LikeNotFound, MatchNotFound
 from src.matches.models import Like, Match
-from src.matches.schemas import MatchInfo, ReceivedLike
+from src.matches.schemas import Liked, MatchInfo, ReceivedLike
 from src.notifications import service as notification_service
 from src.notifications.constants import Event
 from src.profiles import service as profile_service
-from src.profiles.schemas import PromptOut
+from src.profiles.constants import GuessKind
 
 
 async def send_like(
     session: AsyncSession,
     from_user_id: uuid.UUID,
     to_user_id: uuid.UUID,
-    prompt: PromptOut,
+    liked: Liked,
     comment: str | None,
     now: datetime,
 ) -> bool:
-    """Like someone's prompt. Returns True if it's a match. Doesn't commit: the caller does.
+    """Like a prompt or guess card. Returns True if it's a match. Doesn't commit.
 
     If they had already liked me, this is a match straight away. If they had passed on me,
     my like is quietly filed as passed so it never reaches them again.
@@ -46,8 +46,10 @@ async def send_like(
         Like(
             from_user_id=from_user_id,
             to_user_id=to_user_id,
-            prompt_question=prompt.question,
-            prompt_answer=prompt.answer,
+            kind=liked.kind,
+            question=liked.question,
+            answer=liked.answer,
+            guess_kind=liked.guess_kind,
             comment=comment,
             status=status,
             decided_at=now if status != LikeStatus.PENDING else None,
@@ -132,8 +134,9 @@ async def received_likes(session: AsyncSession, user: Me) -> list[ReceivedLike]:
     return [
         ReceivedLike(
             id=like.id,
-            prompt_question=like.prompt_question,
-            prompt_answer=like.prompt_answer,
+            liked=_liked(like),
+            prompt_question=like.question,
+            prompt_answer=like.answer,
             comment=like.comment,
             created_at=like.created_at,
             profile=profiles[like.from_user_id],
@@ -158,6 +161,15 @@ async def pass_like(session: AsyncSession, user: Me, like_id: uuid.UUID, now: da
     like.status = LikeStatus.PASSED
     like.decided_at = now
     await session.commit()
+
+
+def _liked(like: Like) -> Liked:
+    return Liked(
+        kind=LikedKind(like.kind),
+        question=like.question,
+        answer=like.answer,
+        guess_kind=GuessKind(like.guess_kind) if like.guess_kind else None,
+    )
 
 
 async def _waiting_for(session: AsyncSession, user: Me, like_id: uuid.UUID) -> Like:

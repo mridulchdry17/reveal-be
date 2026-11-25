@@ -43,6 +43,12 @@ class GuessCardNotFound(NotFound):
     code = "guess_card_not_found"
 
 
+class GuessCardNotGuessed(Conflict):
+    """Liking a guess card needs a guess on it first."""
+
+    code = "guess_card_not_guessed"
+
+
 class AlreadyGuessed(Conflict):
     """One try per card."""
 

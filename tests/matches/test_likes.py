@@ -46,6 +46,12 @@ async def test_a_like_reaches_them_with_the_prompt_and_comment(client: AsyncClie
     [received] = await likes(client, kabir)
     assert received["prompt_question"] == "Hot take"
     assert received["prompt_answer"] == "Maggi is a full meal"
+    assert received["liked"] == {
+        "kind": "prompt",
+        "question": "Hot take",
+        "answer": "Maggi is a full meal",
+        "guess_kind": None,
+    }
     assert received["comment"] == "Maggi at 2am?"
     assert received["profile"]["nickname"] == "Aanya nick"
     assert received["profile"]["first_name"] is None  # names open only by swap
@@ -173,3 +179,79 @@ async def test_you_can_only_like_their_own_prompt(client: AsyncClient) -> None:
 
     assert response.status_code == 404
     assert response.json()["code"] == "prompt_not_found"
+
+
+async def like_card(
+    client: AsyncClient, headers: dict[str, str], item: dict[str, Any], card: int, **extra: Any
+):
+    card_id = item["profile"]["guess_cards"][card]["id"]
+    return await client.post(
+        f"/v1/drops/tonight/{item['id']}/like",
+        json={"guess_card_id": card_id, **extra},
+        headers=headers,
+    )
+
+
+async def test_a_guessed_card_can_be_liked_and_shows_its_true_option(client: AsyncClient) -> None:
+    aanya = await finished(client, "Aanya", "woman", "men")
+    kabir = await finished(client, "Kabir", "man", "women")
+    item = await first_item(client, aanya)
+    card_id = item["profile"]["guess_cards"][1]["id"]
+    await client.post(f"/v1/guesses/{card_id}", json={"pick": 0}, headers=aanya)  # wrong
+
+    response = await like_card(client, aanya, item, 1, comment="Monsoon, really?")
+
+    assert response.status_code == 200, response.text
+    [received] = await likes(client, kabir)
+    assert received["liked"] == {
+        "kind": "guess",
+        "question": "Best season of the year",
+        "answer": "Monsoon",
+        "guess_kind": "hot_take",
+    }
+    assert received["comment"] == "Monsoon, really?"
+    assert received["prompt_question"] == "Best season of the year"  # old clients
+
+
+async def test_a_card_must_be_guessed_before_it_can_be_liked(client: AsyncClient) -> None:
+    aanya = await finished(client, "Aanya", "woman", "men")
+    kabir = await finished(client, "Kabir", "man", "women")
+    item = await first_item(client, aanya)
+
+    response = await like_card(client, aanya, item, 0)
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "guess_card_not_guessed"
+    assert await likes(client, kabir) == []
+    assert (await first_item(client, aanya))["decision"] is None
+
+
+async def test_only_their_own_cards_can_be_liked(client: AsyncClient) -> None:
+    aanya = await finished(client, "Aanya", "woman", "men")
+    await finished(client, "Kabir", "man", "women")
+    item = await first_item(client, aanya)
+    mine = (await client.get("/v1/profile/me", headers=aanya)).json()["guess_cards"][0]["id"]
+
+    response = await client.post(
+        f"/v1/drops/tonight/{item['id']}/like", json={"guess_card_id": mine}, headers=aanya
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "guess_card_not_found"
+
+
+@pytest.mark.parametrize("both", [True, False])
+async def test_a_like_names_exactly_one_thing(client: AsyncClient, both: bool) -> None:
+    aanya = await finished(client, "Aanya", "woman", "men")
+    await finished(client, "Kabir", "man", "women")
+    item = await first_item(client, aanya)
+    body: dict[str, Any] = {}
+    if both:
+        body = {
+            "prompt_id": item["profile"]["prompts"][0]["id"],
+            "guess_card_id": item["profile"]["guess_cards"][0]["id"],
+        }
+
+    response = await client.post(f"/v1/drops/tonight/{item['id']}/like", json=body, headers=aanya)
+
+    assert response.status_code == 422

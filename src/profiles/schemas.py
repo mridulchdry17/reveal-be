@@ -199,6 +199,14 @@ class ProfileOptions(BaseModel):
     guess_option_max: int
 
 
+class GuessedCard(BaseModel):
+    """One of someone's guess cards that a viewer has guessed, with its true option."""
+
+    kind: c.GuessKind
+    question: str
+    answer: str = Field(description="Text of the true option")
+
+
 class GuessCardOut(BaseModel):
     """One of their guess cards, from this viewer's side."""
 

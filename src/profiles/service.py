@@ -16,6 +16,7 @@ from src.profiles import photo, repository, voice
 from src.profiles.exceptions import (
     AlreadyGuessed,
     GuessCardNotFound,
+    GuessCardNotGuessed,
     NotAPhoto,
     NotAVoiceNote,
     PhotoNotFound,
@@ -32,6 +33,7 @@ from src.profiles.schemas import (
     Contact,
     GuessCardOut,
     GuessCardsUpdate,
+    GuessedCard,
     MyGuessCard,
     MyProfile,
     Option,
@@ -422,6 +424,21 @@ async def prompt_of(session: AsyncSession, owner_id: uuid.UUID, prompt_id: uuid.
     if prompt is None:
         raise PromptNotFound("That prompt isn't on their profile any more")
     return PromptOut(id=prompt.id, question=prompt.question, answer=prompt.answer)
+
+
+async def guessed_card_of(
+    session: AsyncSession, owner_id: uuid.UUID, card_id: uuid.UUID, guesser_id: uuid.UUID
+) -> GuessedCard:
+    """One of the owner's current guess cards, which this guesser has already guessed."""
+    found = await repository.guess_card_with_owner(session, card_id)
+    if found is None or found[1] != owner_id:
+        raise GuessCardNotFound
+    card = found[0]
+    if await repository.get_guess(session, guesser_id, card_id) is None:
+        raise GuessCardNotGuessed("Guess this card before liking it")
+    return GuessedCard(
+        kind=c.GuessKind(card.kind), question=card.question, answer=card.options[card.answer]
+    )
 
 
 def first_name(full_name: str) -> str:
