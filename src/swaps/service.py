@@ -190,20 +190,32 @@ def _accept(swap: Swap, now: datetime) -> None:
 
 
 async def _pair(session: AsyncSession, viewer_id: uuid.UUID, match: MatchInfo) -> _Pair:
-    owned = await profile_service.owned_cards(session, [viewer_id, match.other_user_id])
-    right = await profile_service.right_guesses(session, viewer_id, [match.other_user_id])
-    pair = _Pair(
-        viewer_id=viewer_id,
-        mine=owned[viewer_id],
-        theirs=owned[match.other_user_id],
-        right_guesses=right[match.other_user_id],
-    )
-    for s in await repository.open_swaps(session, [match.id]):
+    return (await _pairs(session, viewer_id, [match]))[match.id]
+
+
+async def _pairs(
+    session: AsyncSession, viewer_id: uuid.UUID, matches: Sequence[MatchInfo]
+) -> dict[uuid.UUID, _Pair]:
+    """The pair for each of these matches, keyed by match id, in a fixed number of queries."""
+    others = [m.other_user_id for m in matches]
+    owned = await profile_service.owned_cards(session, [viewer_id, *others])
+    right = await profile_service.right_guesses(session, viewer_id, others)
+    pairs = {
+        m.id: _Pair(
+            viewer_id=viewer_id,
+            mine=owned[viewer_id],
+            theirs=owned[m.other_user_id],
+            right_guesses=right[m.other_user_id],
+        )
+        for m in matches
+    }
+    for s in await repository.open_swaps(session, list(pairs)) if pairs else []:
+        pair = pairs[s.match_id]
         if s.status == SwapStatus.ACCEPTED:
             pair.accepted.add(Card(s.card))
         else:
             pair.pending[Card(s.card)] = s
-    return pair
+    return pairs
 
 
 def _blocked(pair: _Pair, card: Card) -> CardState | None:
