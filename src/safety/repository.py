@@ -15,6 +15,13 @@ async def add_block(session: AsyncSession, blocker_id: uuid.UUID, blocked_id: uu
     )
 
 
+async def blocks_by(session: AsyncSession, blocker_id: uuid.UUID) -> list[Block]:
+    rows = await session.scalars(
+        select(Block).where(Block.blocker_id == blocker_id).order_by(Block.created_at.desc())
+    )
+    return list(rows)
+
+
 async def add_report(session: AsyncSession, report: Report) -> None:
     session.add(report)
     await session.flush()

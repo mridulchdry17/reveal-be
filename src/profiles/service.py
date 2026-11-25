@@ -499,6 +499,12 @@ async def guessed_card_of(
     )
 
 
+async def nicknames(session: AsyncSession, user_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """Nicknames only, e.g. for my own block list. Missing profiles get an empty string."""
+    found = {p.user_id: p.nickname for p in await repository.get_for_users(session, user_ids)}
+    return {uid: found.get(uid) or "" for uid in user_ids}
+
+
 def first_name(full_name: str) -> str:
     """Card 1. The first word of the Google account name."""
     return full_name.split()[0] if full_name.strip() else ""
