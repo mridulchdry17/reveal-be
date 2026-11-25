@@ -8,10 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.schemas import Me
 from src.hides import service as hide_service
 from src.matches import repository
-from src.matches.constants import LikedKind, LikeStatus
+from src.matches.constants import LOOKS_PENDING, LikedKind, LikeStatus
 from src.matches.exceptions import AlreadyLiked, LikeAlreadyAnswered, LikeNotFound, MatchNotFound
 from src.matches.models import Like, Match
-from src.matches.schemas import Liked, MatchInfo, MatchResult, ReceivedLike
+from src.matches.schemas import Liked, MatchInfo, MatchResult, ReceivedLike, SentLike
 from src.notifications import service as notification_service
 from src.notifications.constants import Event
 from src.profiles import service as profile_service
@@ -38,7 +38,7 @@ async def send_like(
     status = LikeStatus.PENDING
     if theirs and theirs.status == LikeStatus.PASSED:
         status = LikeStatus.PASSED
-    elif theirs:
+    elif theirs and theirs.status == LikeStatus.PENDING:
         status = LikeStatus.MATCHED
         theirs.status = LikeStatus.MATCHED
         theirs.decided_at = now
@@ -148,6 +148,53 @@ async def received_likes(session: AsyncSession, user: Me) -> list[ReceivedLike]:
     ]
 
 
+async def sent_likes(session: AsyncSession, user: Me) -> list[SentLike]:
+    """My likes still waiting for an answer. A pass looks the same: the liker is never told."""
+    hidden = await hide_service.hidden_ids(session, user.id)
+    likes = [
+        like
+        for like in await repository.likes_from(session, user.id, LOOKS_PENDING)
+        if like.to_user_id not in hidden
+    ]
+    profiles = await profile_service.public_profiles(
+        session, user.id, [like.to_user_id for like in likes]
+    )
+    return [
+        SentLike(
+            id=like.id,
+            nickname=profiles[like.to_user_id].nickname,
+            liked=_liked(like),
+            comment=like.comment,
+            created_at=like.created_at,
+            has_blurred_photo=profiles[like.to_user_id].has_blurred_photo,
+        )
+        for like in likes
+        if like.to_user_id in profiles
+    ]
+
+
+async def take_back(session: AsyncSession, user: Me, like_id: uuid.UUID, now: datetime) -> None:
+    """Withdraw a like still waiting for an answer. They stop seeing it; nobody is told."""
+    like = await repository.get_like_for_update(session, like_id)
+    if like is None or like.from_user_id != user.id or like.status not in LOOKS_PENDING:
+        raise LikeNotFound
+    if await hide_service.is_hidden(session, user.id, like.to_user_id):
+        raise LikeNotFound
+    like.status = LikeStatus.WITHDRAWN
+    like.decided_at = now
+    await session.commit()
+
+
+async def sent_photo(session: AsyncSession, user: Me, like_id: uuid.UUID) -> bytes:
+    """The blurred photo of someone I liked, while the like waits (or looks like it does)."""
+    like = await repository.get_like_by_id(session, like_id)
+    if like is None or like.from_user_id != user.id or like.status not in LOOKS_PENDING:
+        raise LikeNotFound
+    if await hide_service.is_hidden(session, user.id, like.to_user_id):
+        raise LikeNotFound
+    return await profile_service.blurred_photo(session, user.id, like.to_user_id)
+
+
 async def match_back(
     session: AsyncSession, user: Me, like_id: uuid.UUID, now: datetime
 ) -> MatchResult:
@@ -178,7 +225,7 @@ def _liked(like: Like) -> Liked:
 
 
 async def _waiting_for(session: AsyncSession, user: Me, like_id: uuid.UUID) -> Like:
-    like = await repository.get_like_by_id(session, like_id)
+    like = await repository.get_like_for_update(session, like_id)
     # Someone else's like looks exactly like a missing one.
     if like is None or like.to_user_id != user.id:
         raise LikeNotFound

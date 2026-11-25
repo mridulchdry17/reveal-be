@@ -25,6 +25,19 @@ class MatchInfo(BaseModel):
     matched_at: datetime
 
 
+class SentLike(BaseModel):
+    """A like I sent that's still waiting for an answer, as far as I can tell."""
+
+    id: uuid.UUID
+    nickname: str
+    liked: Liked
+    comment: str | None
+    created_at: datetime
+    has_blurred_photo: bool = Field(
+        description="We both have a photo: GET /v1/likes/sent/{id}/photo shows theirs, blurred"
+    )
+
+
 class MatchResult(BaseModel):
     match_id: uuid.UUID = Field(description="The new chat: GET /v1/chats/{match_id}")
 

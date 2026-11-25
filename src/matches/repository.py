@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert
@@ -17,6 +18,22 @@ async def get_like(
 
 async def get_like_by_id(session: AsyncSession, like_id: uuid.UUID) -> Like | None:
     return await session.get(Like, like_id)
+
+
+async def get_like_for_update(session: AsyncSession, like_id: uuid.UUID) -> Like | None:
+    """Locked until commit, so an answer and a take-back can't cross."""
+    return await session.scalar(select(Like).where(Like.id == like_id).with_for_update())
+
+
+async def likes_from(
+    session: AsyncSession, user_id: uuid.UUID, statuses: Sequence[str]
+) -> list[Like]:
+    rows = await session.scalars(
+        select(Like)
+        .where(Like.from_user_id == user_id, Like.status.in_(statuses))
+        .order_by(Like.created_at.desc())
+    )
+    return list(rows)
 
 
 async def likes_to(session: AsyncSession, user_id: uuid.UUID, status: str) -> list[Like]:
