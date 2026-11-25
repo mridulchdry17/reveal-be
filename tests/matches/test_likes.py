@@ -259,3 +259,17 @@ async def test_a_like_names_exactly_one_thing(client: AsyncClient, both: bool) -
     response = await client.post(f"/v1/drops/tonight/{item['id']}/like", json=body, headers=aanya)
 
     assert response.status_code == 422
+
+
+async def test_a_like_says_how_many_of_my_cards_they_got_right(client: AsyncClient) -> None:
+    aanya = await finished(client, "Aanya", "woman", "men")
+    kabir = await finished(client, "Kabir", "man", "women")
+    item = await first_item(client, aanya)
+    cards = [g["id"] for g in item["profile"]["guess_cards"]]
+    for card_id, pick in zip(cards, [0, 1, 0], strict=True):  # true options are 0, 1, 2
+        await client.post(f"/v1/guesses/{card_id}", json={"pick": pick}, headers=aanya)
+
+    await like(client, aanya, item)
+
+    [received] = await likes(client, kabir)
+    assert (received["their_right_guesses"], received["my_cards_total"]) == (2, 3)

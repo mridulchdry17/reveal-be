@@ -192,6 +192,20 @@ async def right_guess_counts(
     return {user_id: count for user_id, count in rows}
 
 
+async def right_guess_counts_on(
+    session: AsyncSession, owner_id: uuid.UUID, guesser_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """Right guesses on this owner's current cards, per guesser."""
+    rows = await session.execute(
+        select(Guess.guesser_id, func.count(Guess.id))
+        .join(GuessCard, Guess.card_id == GuessCard.id)
+        .join(Profile, Profile.id == GuessCard.profile_id)
+        .where(Profile.user_id == owner_id, Guess.guesser_id.in_(guesser_ids), Guess.correct)
+        .group_by(Guess.guesser_id)
+    )
+    return {guesser_id: count for guesser_id, count in rows}
+
+
 async def add_guess(session: AsyncSession, guess: Guess) -> None:
     session.add(guess)
     await session.flush()

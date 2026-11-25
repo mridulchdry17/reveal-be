@@ -382,6 +382,19 @@ async def right_guesses(
     return {uid: counts.get(uid, 0) for uid in owner_ids}
 
 
+async def right_guesses_on(
+    session: AsyncSession, owner_id: uuid.UUID, guesser_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """How many of the owner's current cards each guesser got right (0-3)."""
+    counts = await repository.right_guess_counts_on(session, owner_id, guesser_ids)
+    return {uid: counts.get(uid, 0) for uid in guesser_ids}
+
+
+async def guess_card_count(session: AsyncSession, owner_id: uuid.UUID) -> int:
+    profile = await repository.get_for_user(session, owner_id)
+    return len(await repository.guess_cards_for(session, [profile.id])) if profile else 0
+
+
 async def blurred_photo(session: AsyncSession, viewer_id: uuid.UUID, owner_id: uuid.UUID) -> bytes:
     """The owner's photo, blurred past recognition; a little less per right guess.
 

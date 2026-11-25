@@ -130,9 +130,10 @@ async def received_likes(session: AsyncSession, user: Me) -> list[ReceivedLike]:
         for like in await repository.likes_to(session, user.id, LikeStatus.PENDING)
         if like.from_user_id not in hidden
     ]
-    profiles = await profile_service.public_profiles(
-        session, user.id, [like.from_user_id for like in likes]
-    )
+    likers = [like.from_user_id for like in likes]
+    profiles = await profile_service.public_profiles(session, user.id, likers)
+    right = await profile_service.right_guesses_on(session, user.id, likers)
+    total = await profile_service.guess_card_count(session, user.id)
     return [
         ReceivedLike(
             id=like.id,
@@ -142,6 +143,8 @@ async def received_likes(session: AsyncSession, user: Me) -> list[ReceivedLike]:
             comment=like.comment,
             created_at=like.created_at,
             profile=profiles[like.from_user_id],
+            their_right_guesses=right[like.from_user_id],
+            my_cards_total=total,
         )
         for like in likes
         if like.from_user_id in profiles

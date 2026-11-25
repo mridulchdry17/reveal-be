@@ -52,3 +52,5 @@ class ReceivedLike(BaseModel):
     comment: str | None
     created_at: datetime
     profile: PublicProfile
+    their_right_guesses: int = Field(description="How many of my guess cards they got right")
+    my_cards_total: int = Field(description="How many guess cards I have")
