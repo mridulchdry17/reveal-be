@@ -37,11 +37,12 @@ from src.swaps.constants import (
     PIECES_BEFORE_PHOTO_SWAP,
     SWAPPABLE,
     CardState,
+    SwapSide,
     SwapStatus,
 )
 from src.swaps.exceptions import NothingOpenYet, SwapNotAllowed, SwapNotFound, SwapNotYours
 from src.swaps.models import Swap
-from src.swaps.schemas import CardSwap, SwapBoard
+from src.swaps.schemas import CardSwap, PendingSwap, SwapBoard, SwapSummary
 
 
 @dataclass
@@ -71,6 +72,16 @@ async def opened_cards(
 
 async def board(session: AsyncSession, viewer_id: uuid.UUID, match: MatchInfo) -> SwapBoard:
     return _board(await _pair(session, viewer_id, match))
+
+
+async def summaries(
+    session: AsyncSession, viewer_id: uuid.UUID, matches: Sequence[MatchInfo]
+) -> dict[uuid.UUID, SwapSummary]:
+    """Open photo pieces and the latest waiting request per match, keyed by match id."""
+    return {
+        match_id: SwapSummary(photo_pieces=len(_pieces(pair)), pending_swap=_latest_pending(pair))
+        for match_id, pair in (await _pairs(session, viewer_id, matches)).items()
+    }
 
 
 async def propose(
@@ -261,6 +272,14 @@ def _timing(pair: _Pair, card: Card) -> dict[str, datetime | None]:
         "asked_at": swap.created_at if swap else None,
         "decided_at": swap.decided_at if swap and card in pair.opened else None,
     }
+
+
+def _latest_pending(pair: _Pair) -> PendingSwap | None:
+    if not pair.pending:
+        return None
+    swap = max(pair.pending.values(), key=lambda s: s.created_at)
+    by = SwapSide.ME if swap.proposed_by_id == pair.viewer_id else SwapSide.THEM
+    return PendingSwap(card=Card(swap.card), by=by)
 
 
 def _pieces(pair: _Pair) -> list[int]:

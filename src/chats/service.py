@@ -25,6 +25,7 @@ async def chats(session: AsyncSession, user: Me) -> list[ChatSummary]:
     last = await repository.last_message_per_match(session, ids) if ids else {}
     seen = await repository.reads(session, user.id, ids) if ids else {}
     opened = await swap_service.opened_cards(session, matches)
+    swaps = await swap_service.summaries(session, user.id, matches)
     profiles = await profile_service.public_profiles(
         session, user.id, [m.other_user_id for m in matches], opened
     )
@@ -37,6 +38,8 @@ async def chats(session: AsyncSession, user: Me) -> list[ChatSummary]:
             unread=m.id in last
             and last[m.id].sender_id != user.id
             and seen.get(m.id) != last[m.id].id,
+            photo_pieces=swaps[m.id].photo_pieces,
+            pending_swap=swaps[m.id].pending_swap,
         )
         for m in matches
         if m.other_user_id in profiles

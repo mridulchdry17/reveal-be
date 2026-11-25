@@ -23,6 +23,11 @@ class SwapStatus(StrEnum):
     WITHDRAWN = "withdrawn"  # the asker took it back before an answer
 
 
+class SwapSide(StrEnum):
+    ME = "me"
+    THEM = "them"
+
+
 class CardState(StrEnum):
     """One card of theirs, from where I stand."""
 

@@ -2,6 +2,7 @@ import pytest
 from httpx import AsyncClient
 
 from tests.drops.helpers import drop, finished, matched_pair
+from tests.swaps.test_swaps import add_photo, ask, swap
 
 
 async def send(client: AsyncClient, headers: dict[str, str], match_id: str, body: str):
@@ -127,3 +128,21 @@ async def test_unmatch_closes_the_chat_for_both(client: AsyncClient) -> None:
     assert (await send(client, aanya, match_id, "hello?")).status_code == 404
     again = await client.post(f"/v1/matches/{match_id}/unmatch", headers=aanya)
     assert again.status_code == 404
+
+
+async def test_the_chat_list_shows_photo_pieces_and_the_waiting_swap(client: AsyncClient) -> None:
+    aanya, kabir, match_id = await matched_pair(client)
+    await add_photo(client, aanya)
+    await add_photo(client, kabir)
+    [row] = (await client.get("/v1/chats", headers=aanya)).json()
+    assert (row["photo_pieces"], row["pending_swap"]) == (0, None)
+
+    await swap(client, aanya, kabir, match_id, "branch")
+    await ask(client, kabir, match_id, "hometown")
+    await ask(client, aanya, match_id, "first_name")
+
+    [hers] = (await client.get("/v1/chats", headers=aanya)).json()
+    [his] = (await client.get("/v1/chats", headers=kabir)).json()
+    assert hers["photo_pieces"] == his["photo_pieces"] == 1
+    assert hers["pending_swap"] == {"card": "first_name", "by": "me"}
+    assert his["pending_swap"] == {"card": "first_name", "by": "them"}

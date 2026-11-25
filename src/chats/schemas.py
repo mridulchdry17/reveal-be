@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from src.chats.constants import MESSAGE_MAX
 from src.profiles.schemas import CleanText, PublicProfile
-from src.swaps.schemas import SwapBoard
+from src.swaps.schemas import PendingSwap, SwapBoard
 
 
 class SendMessage(BaseModel):
@@ -28,6 +28,8 @@ class ChatSummary(BaseModel):
     matched_at: datetime
     last_message: MessageOut | None
     unread: bool = Field(description="Their latest message is newer than what I've seen")
+    photo_pieces: int = Field(description="How many of their 9 photo pieces are open for me")
+    pending_swap: PendingSwap | None = Field(description="The most recent request waiting")
 
 
 class ChatThread(BaseModel):
