@@ -66,12 +66,14 @@ def options() -> ProfileOptions:
 async def my_profile(session: AsyncSession, user: Me) -> MyProfile:
     profile = await repository.get_for_user(session, user.id)
     if profile is None:
-        return _to_mine(user, None, [], [])
+        return _to_mine(user, None, [], [], {})
+    guess_cards = await repository.guess_cards_for(session, [profile.id])
     return _to_mine(
         user,
         profile,
         await repository.prompts(session, profile.id),
-        await repository.guess_cards_for(session, [profile.id]),
+        guess_cards,
+        await repository.guess_stats(session, [g.id for g in guess_cards]),
     )
 
 
@@ -483,7 +485,8 @@ async def _get_or_create(session: AsyncSession, user: Me) -> Profile:
 async def _save(session: AsyncSession, user: Me, profile: Profile) -> MyProfile:
     prompts = await repository.prompts(session, profile.id)
     guess_cards = await repository.guess_cards_for(session, [profile.id])
-    mine = _to_mine(user, profile, prompts, guess_cards)
+    stats = await repository.guess_stats(session, [g.id for g in guess_cards])
+    mine = _to_mine(user, profile, prompts, guess_cards, stats)
     if mine.complete and profile.completed_at is None:
         profile.completed_at = datetime.now(UTC)
     await session.commit()
@@ -491,7 +494,11 @@ async def _save(session: AsyncSession, user: Me, profile: Profile) -> MyProfile:
 
 
 def _to_mine(
-    user: Me, profile: Profile | None, prompts: list[ProfilePrompt], guess_cards: list[GuessCard]
+    user: Me,
+    profile: Profile | None,
+    prompts: list[ProfilePrompt],
+    guess_cards: list[GuessCard],
+    stats: Mapping[uuid.UUID, tuple[int, int]],
 ) -> MyProfile:
     p = profile
     basics_done = bool(p and p.nickname and p.vibe and len(p.interests) >= c.MIN_INTERESTS)
@@ -512,6 +519,8 @@ def _to_mine(
                 question=g.question,
                 options=list(g.options),
                 answer=g.answer,
+                guessed_count=stats.get(g.id, (0, 0))[0],
+                right_count=stats.get(g.id, (0, 0))[1],
             )
             for g in guess_cards
         ],

@@ -145,6 +145,8 @@ class MyGuessCard(BaseModel):
     question: str
     options: list[str]
     answer: int
+    guessed_count: int = Field(description="How many people have guessed this card")
+    right_count: int = Field(description="How many of them got it right")
 
 
 class MyProfile(BaseModel):

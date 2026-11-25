@@ -206,6 +206,18 @@ async def right_guess_counts_on(
     return {guesser_id: count for guesser_id, count in rows}
 
 
+async def guess_stats(
+    session: AsyncSession, card_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, tuple[int, int]]:
+    """Per card: how many people guessed it, and how many got it right."""
+    rows = await session.execute(
+        select(Guess.card_id, func.count(Guess.id), func.count(Guess.id).filter(Guess.correct))
+        .where(Guess.card_id.in_(card_ids))
+        .group_by(Guess.card_id)
+    )
+    return {card_id: (guessed, right) for card_id, guessed, right in rows}
+
+
 async def add_guess(session: AsyncSession, guess: Guess) -> None:
     session.add(guess)
     await session.flush()
