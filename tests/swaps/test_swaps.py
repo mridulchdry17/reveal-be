@@ -1,10 +1,11 @@
+from datetime import timedelta
 from io import BytesIO
 from typing import Any
 
 from httpx import AsyncClient
 from PIL import Image
 
-from tests.drops.helpers import finished, matched_pair
+from tests.drops.helpers import Clock, finished, matched_pair
 from tests.profiles.test_photo import jpeg
 
 Headers = dict[str, str]
@@ -303,3 +304,25 @@ async def test_no_take_back_in_someone_elses_match(client: AsyncClient) -> None:
     meera = await finished(client, "Meera", "woman", "men")
 
     assert (await withdraw(client, meera, match_id, "branch")).status_code == 404
+
+
+async def test_each_card_says_when_it_was_asked_and_opened(
+    client: AsyncClient, clock: Clock
+) -> None:
+    aanya, kabir, match_id = await matched_pair(client)
+    await ask(client, aanya, match_id, "first_name")
+    asked = clock.at
+    clock.at += timedelta(minutes=5)
+
+    pending = {c["card"]: c for c in (await thread(client, kabir, match_id))["swaps"]["cards"]}
+    assert pending["first_name"]["asked_at"] is not None
+    assert pending["first_name"]["decided_at"] is None
+    assert pending["branch"]["asked_at"] is None
+
+    await answer(client, kabir, match_id, "first_name", yes=True)
+
+    opened = {c["card"]: c for c in (await thread(client, aanya, match_id))["swaps"]["cards"]}
+    assert opened["first_name"]["decided_at"].startswith(
+        (asked + timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M")
+    )
+    assert opened["first_name"]["asked_at"] == pending["first_name"]["asked_at"]

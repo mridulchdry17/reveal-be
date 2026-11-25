@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 from src.profiles.constants import Card
@@ -11,6 +13,10 @@ class ProposeSwap(BaseModel):
 class CardSwap(BaseModel):
     card: Card
     state: CardState
+    asked_at: datetime | None = Field(
+        description="When the current request (pending or accepted) was made"
+    )
+    decided_at: datetime | None = Field(description="When it opened; null unless open")
 
 
 class SwapBoard(BaseModel):

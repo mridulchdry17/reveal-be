@@ -53,6 +53,7 @@ class _Pair:
     theirs: OwnedCards
     right_guesses: int = 0  # mine, on their guess cards
     accepted: set[Card] = field(default_factory=set)
+    opened: dict[Card, Swap] = field(default_factory=dict)  # the accepted rows
     pending: dict[Card, Swap] = field(default_factory=dict)
 
 
@@ -213,6 +214,7 @@ async def _pairs(
         pair = pairs[s.match_id]
         if s.status == SwapStatus.ACCEPTED:
             pair.accepted.add(Card(s.card))
+            pair.opened[Card(s.card)] = s
         else:
             pair.pending[Card(s.card)] = s
     return pairs
@@ -245,11 +247,20 @@ def _state(pair: _Pair, card: Card) -> CardState:
 def _board(pair: _Pair) -> SwapBoard:
     voice_for_both = pair.mine.voice and pair.theirs.voice
     cards = [
-        CardSwap(card=card, state=_state(pair, card))
+        CardSwap(card=card, state=_state(pair, card), **_timing(pair, card))
         for card in SWAPPABLE
         if card != Card.VOICE or voice_for_both or Card.VOICE in pair.accepted
     ]
     return SwapBoard(cards=cards, photo_pieces=_pieces(pair))
+
+
+def _timing(pair: _Pair, card: Card) -> dict[str, datetime | None]:
+    """When the open request was made and, if it was accepted, when the card opened."""
+    swap = pair.opened.get(card) or pair.pending.get(card)
+    return {
+        "asked_at": swap.created_at if swap else None,
+        "decided_at": swap.decided_at if swap and card in pair.opened else None,
+    }
 
 
 def _pieces(pair: _Pair) -> list[int]:
