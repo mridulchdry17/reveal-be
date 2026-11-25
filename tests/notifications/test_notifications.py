@@ -255,3 +255,25 @@ async def test_subscriptions_must_be_https(client: AsyncClient) -> None:
     body = {"endpoint": "http://evil.local/x", "keys": {"p256dh": "p", "auth": "a"}}
     response = await client.put("/v1/notifications/subscription", json=body, headers=kabir)
     assert response.status_code == 422
+
+
+async def test_taking_back_a_like_or_a_swap_request_sends_nothing(client: AsyncClient) -> None:
+    aanya, _, match_id = await matched_pair(client)
+    await client.post(f"/v1/chats/{match_id}/swaps", json={"card": "branch"}, headers=aanya)
+    meera = await finished(client, "Meera", "woman", "men")
+    dev = await finished(client, "Dev", "man", "women")
+    [item] = [
+        i for i in (await drop(client, dev))["items"] if i["profile"]["nickname"] == "Meera nick"
+    ]
+    prompt_id = item["profile"]["prompts"][0]["id"]
+    await client.post(
+        f"/v1/drops/tonight/{item['id']}/like", json={"prompt_id": prompt_id}, headers=dev
+    )
+    [sent] = (await client.get("/v1/likes/sent", headers=dev)).json()
+    before = await waiting()
+
+    await client.delete(f"/v1/chats/{match_id}/swaps/branch", headers=aanya)
+    await client.delete(f"/v1/likes/sent/{sent['id']}", headers=dev)
+
+    assert await waiting() == before
+    assert (await client.get("/v1/likes", headers=meera)).json() == []

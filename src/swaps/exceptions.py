@@ -13,6 +13,12 @@ class SwapNotFound(NotFound):
     code = "swap_not_found"
 
 
+class SwapNotYours(Conflict):
+    """Only the person who asked can take a request back; the other one answers it."""
+
+    code = "swap_not_yours"
+
+
 class NothingOpenYet(NotFound):
     """No pieces of their photo, or not their voice note, are open to this viewer."""
 

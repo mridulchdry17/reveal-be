@@ -39,7 +39,7 @@ from src.swaps.constants import (
     CardState,
     SwapStatus,
 )
-from src.swaps.exceptions import NothingOpenYet, SwapNotAllowed, SwapNotFound
+from src.swaps.exceptions import NothingOpenYet, SwapNotAllowed, SwapNotFound, SwapNotYours
 from src.swaps.models import Swap
 from src.swaps.schemas import CardSwap, SwapBoard
 
@@ -126,6 +126,25 @@ async def decline(
         raise SwapNotFound("They haven't asked to swap that card")
     swap = pair.pending[card]
     swap.status = SwapStatus.DECLINED
+    swap.decided_at = now
+    await session.commit()
+    return await board(session, user.id, match)
+
+
+async def withdraw(
+    session: AsyncSession, user: Me, match_id: uuid.UUID, card: Card, now: datetime
+) -> SwapBoard:
+    """Take back my request while they haven't answered. Nothing opens; nobody is told."""
+    match = await match_service.live_match(session, user.id, match_id)
+    await repository.lock_match(session, match.id)
+    pair = await _pair(session, user.id, match)
+    state = _state(pair, card)
+    if state == CardState.THEY_ASKED:
+        raise SwapNotYours("They asked for this one: swap or say not yet")
+    if state != CardState.YOU_ASKED:
+        raise SwapNotFound("You haven't asked to swap that card")
+    swap = pair.pending[card]
+    swap.status = SwapStatus.WITHDRAWN
     swap.decided_at = now
     await session.commit()
     return await board(session, user.id, match)

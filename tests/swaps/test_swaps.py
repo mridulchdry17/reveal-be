@@ -4,7 +4,7 @@ from typing import Any
 from httpx import AsyncClient
 from PIL import Image
 
-from tests.drops.helpers import matched_pair
+from tests.drops.helpers import finished, matched_pair
 from tests.profiles.test_photo import jpeg
 
 Headers = dict[str, str]
@@ -204,8 +204,6 @@ async def test_chat_list_shows_swapped_cards(client: AsyncClient) -> None:
 
 
 async def test_someone_outside_the_match_cannot_swap(client: AsyncClient) -> None:
-    from tests.drops.helpers import finished
-
     _, _, match_id = await matched_pair(client)
     meera = await finished(client, "Meera", "woman", "men")
 
@@ -265,3 +263,43 @@ async def test_photo_and_voice_close_when_the_match_ends(client: AsyncClient) ->
 
     assert (await client.get(f"/v1/chats/{match_id}/photo", headers=aanya)).status_code == 404
     assert (await client.get(f"/v1/chats/{match_id}/voice", headers=aanya)).status_code == 404
+
+
+async def withdraw(client: AsyncClient, headers: Headers, match_id: str, card: str):
+    return await client.delete(f"/v1/chats/{match_id}/swaps/{card}", headers=headers)
+
+
+async def test_i_can_take_back_my_request_before_they_answer(client: AsyncClient) -> None:
+    aanya, kabir, match_id = await matched_pair(client)
+    await ask(client, aanya, match_id, "hometown")
+
+    response = await withdraw(client, aanya, match_id, "hometown")
+
+    assert response.status_code == 200
+    assert states(response.json())["hometown"] == "can_ask"
+    assert states(await thread(client, kabir, match_id))["hometown"] == "can_ask"
+    assert (await answer(client, kabir, match_id, "hometown", yes=True)).status_code == 404
+    assert (await ask(client, aanya, match_id, "hometown")).status_code == 200
+
+
+async def test_only_the_asker_takes_back_and_only_while_pending(client: AsyncClient) -> None:
+    aanya, kabir, match_id = await matched_pair(client)
+    await ask(client, aanya, match_id, "branch")
+
+    theirs = await withdraw(client, kabir, match_id, "branch")
+    assert theirs.status_code == 409
+    assert theirs.json()["code"] == "swap_not_yours"
+    assert (await withdraw(client, aanya, match_id, "hometown")).status_code == 404
+
+    await answer(client, kabir, match_id, "branch", yes=True)
+    opened = await withdraw(client, aanya, match_id, "branch")
+    assert opened.status_code == 404
+    assert (await thread(client, aanya, match_id))["profile"]["branch"] == "CSE"
+
+
+async def test_no_take_back_in_someone_elses_match(client: AsyncClient) -> None:
+    aanya, _, match_id = await matched_pair(client)
+    await ask(client, aanya, match_id, "branch")
+    meera = await finished(client, "Meera", "woman", "men")
+
+    assert (await withdraw(client, meera, match_id, "branch")).status_code == 404

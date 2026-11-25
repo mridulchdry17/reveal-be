@@ -67,6 +67,23 @@ async def decline(
     return await service.decline(session, user, match_id, card, at)
 
 
+@router.delete(
+    "/swaps/{card}",
+    response_model=SwapBoard,
+    status_code=status.HTTP_200_OK,
+    summary="Take back my request before they answer (no notification)",
+    responses={
+        **_ERRORS,
+        404: {"model": ErrorResponse, "description": "No such live match, or no request of mine"},
+        409: {"model": ErrorResponse, "description": "They asked, not me (swap_not_yours)"},
+    },
+)
+async def withdraw(
+    match_id: uuid.UUID, card: Card, user: Student, session: Session, at: Now
+) -> SwapBoard:
+    return await service.withdraw(session, user, match_id, card, at)
+
+
 _MEDIA_ERRORS: dict[int | str, dict[str, Any]] = {
     **{k: v for k, v in _ERRORS.items() if k != 409},
     404: {"model": ErrorResponse, "description": "No such live match, or nothing open yet"},
