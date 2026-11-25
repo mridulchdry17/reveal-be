@@ -20,6 +20,12 @@ class SwapStatus(StrEnum):
     PENDING = "pending"
     ACCEPTED = "accepted"
     DECLINED = "declined"
+    WITHDRAWN = "withdrawn"  # the asker took it back before an answer
+
+
+class SwapSide(StrEnum):
+    ME = "me"
+    THEM = "them"
 
 
 class CardState(StrEnum):

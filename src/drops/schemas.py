@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.drops.constants import Decision
 from src.matches.constants import COMMENT_MAX
@@ -17,11 +17,17 @@ class DropItemOut(BaseModel):
 class Tonight(BaseModel):
     drop_date: date = Field(description="College-time date this drop opened, at 9 PM")
     next_drop_at: datetime
+    hint_used: bool = Field(description="I've used tonight's guess-card hint")
     items: list[DropItemOut]
 
 
 class LikeRequest(BaseModel):
-    prompt_id: uuid.UUID = Field(description="Which of their prompts you're liking")
+    """Like one of their prompts, or one of their guess cards you've already guessed."""
+
+    prompt_id: uuid.UUID | None = Field(default=None, description="Which of their prompts")
+    guess_card_id: uuid.UUID | None = Field(
+        default=None, description="Or which of their guess cards (guess it first)"
+    )
     comment: CleanText | None = Field(default=None, max_length=COMMENT_MAX)
 
     @field_validator("comment")
@@ -29,6 +35,15 @@ class LikeRequest(BaseModel):
     def _blank_is_none(cls, value: str | None) -> str | None:
         return value or None
 
+    @model_validator(mode="after")
+    def _exactly_one_target(self) -> "LikeRequest":
+        if (self.prompt_id is None) == (self.guess_card_id is None):
+            raise ValueError("Send exactly one of prompt_id or guess_card_id")
+        return self
+
 
 class LikeResult(BaseModel):
     matched: bool = Field(description="They had already liked you: it's a match")
+    match_id: uuid.UUID | None = Field(
+        default=None, description="The new chat when matched: GET /v1/chats/{match_id}"
+    )

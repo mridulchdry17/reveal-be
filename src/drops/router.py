@@ -22,8 +22,12 @@ _ERRORS: dict[int | str, dict[str, Any]] = {
 }
 _ANSWER_ERRORS: dict[int | str, dict[str, Any]] = {
     **_ERRORS,
-    404: {"model": ErrorResponse, "description": "Not in your drop, or the prompt is gone"},
-    409: {"model": ErrorResponse, "description": "Already answered, or the drop has moved on"},
+    404: {"model": ErrorResponse, "description": "Not in your drop, or the prompt or card is gone"},
+    409: {
+        "model": ErrorResponse,
+        "description": "Already answered, the drop has moved on, or that card isn't guessed yet "
+        "(guess_card_not_guessed)",
+    },
 }
 
 Student = Annotated[Me, Depends(verified_user)]

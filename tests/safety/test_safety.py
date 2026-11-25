@@ -82,3 +82,25 @@ async def test_report_needs_a_known_reason(client: AsyncClient) -> None:
     )
 
     assert response.status_code == 422
+
+
+async def test_my_block_list_shows_who_i_blocked(client: AsyncClient) -> None:
+    aanya, kabir, match_id = await matched_pair(client)
+    assert (await client.get("/v1/blocks", headers=aanya)).json() == []
+
+    await client.post(f"/v1/matches/{match_id}/block", headers=aanya)
+
+    [blocked] = (await client.get("/v1/blocks", headers=aanya)).json()
+    assert blocked["nickname"] == "Kabir nick"
+    assert set(blocked) == {"id", "nickname", "blocked_at"}
+    assert (await client.get("/v1/blocks", headers=kabir)).json() == []  # silent
+
+
+async def test_reporting_also_lists_them_as_blocked(client: AsyncClient) -> None:
+    aanya, _, match_id = await matched_pair(client)
+
+    await client.post(f"/v1/matches/{match_id}/report", json={"reason": "spam"}, headers=aanya)
+
+    assert [b["nickname"] for b in (await client.get("/v1/blocks", headers=aanya)).json()] == [
+        "Kabir nick"
+    ]

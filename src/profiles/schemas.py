@@ -145,6 +145,8 @@ class MyGuessCard(BaseModel):
     question: str
     options: list[str]
     answer: int
+    guessed_count: int = Field(description="How many people have guessed this card")
+    right_count: int = Field(description="How many of them got it right")
 
 
 class MyProfile(BaseModel):
@@ -199,6 +201,14 @@ class ProfileOptions(BaseModel):
     guess_option_max: int
 
 
+class GuessedCard(BaseModel):
+    """One of someone's guess cards that a viewer has guessed, with its true option."""
+
+    kind: c.GuessKind
+    question: str
+    answer: str = Field(description="Text of the true option")
+
+
 class GuessCardOut(BaseModel):
     """One of their guess cards, from this viewer's side."""
 
@@ -208,6 +218,9 @@ class GuessCardOut(BaseModel):
     options: list[str]
     picked: int | None = Field(description="My guess, or null if I haven't guessed yet")
     answer: int | None = Field(description="The true option; null until I've guessed")
+    struck: int | None = Field(
+        description="A wrong option my hint struck off this card, or null if I used no hint here"
+    )
 
 
 class PublicProfile(BaseModel):

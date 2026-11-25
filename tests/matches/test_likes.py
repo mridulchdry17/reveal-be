@@ -42,10 +42,16 @@ async def test_a_like_reaches_them_with_the_prompt_and_comment(client: AsyncClie
     response = await like(client, aanya, await first_item(client, aanya), "Maggi at 2am?")
 
     assert response.status_code == 200
-    assert response.json() == {"matched": False}
+    assert response.json() == {"matched": False, "match_id": None}
     [received] = await likes(client, kabir)
     assert received["prompt_question"] == "Hot take"
     assert received["prompt_answer"] == "Maggi is a full meal"
+    assert received["liked"] == {
+        "kind": "prompt",
+        "question": "Hot take",
+        "answer": "Maggi is a full meal",
+        "guess_kind": None,
+    }
     assert received["comment"] == "Maggi at 2am?"
     assert received["profile"]["nickname"] == "Aanya nick"
     assert received["profile"]["first_name"] is None  # names open only by swap
@@ -80,9 +86,11 @@ async def test_liking_back_is_a_match(client: AsyncClient) -> None:
 
     response = await client.post(f"/v1/likes/{received['id']}/match", headers=kabir)
 
-    assert response.status_code == 204
+    assert response.status_code == 200
     assert await likes(client, kabir) == []
     assert await match_count() == 1
+    [chat] = (await client.get("/v1/chats", headers=kabir)).json()
+    assert response.json() == {"match_id": chat["match_id"]}
 
 
 async def test_liking_each_other_from_both_drops_is_a_match(client: AsyncClient) -> None:
@@ -91,8 +99,10 @@ async def test_liking_each_other_from_both_drops_is_a_match(client: AsyncClient)
     aanyas_item = await first_item(client, aanya)
     kabirs_item = await first_item(client, kabir)
 
-    assert (await like(client, aanya, aanyas_item)).json() == {"matched": False}
-    assert (await like(client, kabir, kabirs_item)).json() == {"matched": True}
+    assert (await like(client, aanya, aanyas_item)).json() == {"matched": False, "match_id": None}
+    result = (await like(client, kabir, kabirs_item)).json()
+    [chat] = (await client.get("/v1/chats", headers=kabir)).json()
+    assert result == {"matched": True, "match_id": chat["match_id"]}
     assert await likes(client, aanya) == []
     assert await likes(client, kabir) == []
     assert await match_count() == 1
@@ -110,7 +120,7 @@ async def test_passing_on_a_like_is_silent_and_final(client: AsyncClient) -> Non
     assert response.status_code == 204
     assert await likes(client, kabir) == []
     # Even if he later likes her from his drop, it's not a match and she isn't told.
-    assert (await like(client, kabir, kabirs_item)).json() == {"matched": False}
+    assert (await like(client, kabir, kabirs_item)).json()["matched"] is False
     assert await likes(client, aanya) == []
     assert await match_count() == 0
 
@@ -173,3 +183,93 @@ async def test_you_can_only_like_their_own_prompt(client: AsyncClient) -> None:
 
     assert response.status_code == 404
     assert response.json()["code"] == "prompt_not_found"
+
+
+async def like_card(
+    client: AsyncClient, headers: dict[str, str], item: dict[str, Any], card: int, **extra: Any
+):
+    card_id = item["profile"]["guess_cards"][card]["id"]
+    return await client.post(
+        f"/v1/drops/tonight/{item['id']}/like",
+        json={"guess_card_id": card_id, **extra},
+        headers=headers,
+    )
+
+
+async def test_a_guessed_card_can_be_liked_and_shows_its_true_option(client: AsyncClient) -> None:
+    aanya = await finished(client, "Aanya", "woman", "men")
+    kabir = await finished(client, "Kabir", "man", "women")
+    item = await first_item(client, aanya)
+    card_id = item["profile"]["guess_cards"][1]["id"]
+    await client.post(f"/v1/guesses/{card_id}", json={"pick": 0}, headers=aanya)  # wrong
+
+    response = await like_card(client, aanya, item, 1, comment="Monsoon, really?")
+
+    assert response.status_code == 200, response.text
+    [received] = await likes(client, kabir)
+    assert received["liked"] == {
+        "kind": "guess",
+        "question": "Best season of the year",
+        "answer": "Monsoon",
+        "guess_kind": "hot_take",
+    }
+    assert received["comment"] == "Monsoon, really?"
+    assert received["prompt_question"] == "Best season of the year"  # old clients
+
+
+async def test_a_card_must_be_guessed_before_it_can_be_liked(client: AsyncClient) -> None:
+    aanya = await finished(client, "Aanya", "woman", "men")
+    kabir = await finished(client, "Kabir", "man", "women")
+    item = await first_item(client, aanya)
+
+    response = await like_card(client, aanya, item, 0)
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "guess_card_not_guessed"
+    assert await likes(client, kabir) == []
+    assert (await first_item(client, aanya))["decision"] is None
+
+
+async def test_only_their_own_cards_can_be_liked(client: AsyncClient) -> None:
+    aanya = await finished(client, "Aanya", "woman", "men")
+    await finished(client, "Kabir", "man", "women")
+    item = await first_item(client, aanya)
+    mine = (await client.get("/v1/profile/me", headers=aanya)).json()["guess_cards"][0]["id"]
+
+    response = await client.post(
+        f"/v1/drops/tonight/{item['id']}/like", json={"guess_card_id": mine}, headers=aanya
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "guess_card_not_found"
+
+
+@pytest.mark.parametrize("both", [True, False])
+async def test_a_like_names_exactly_one_thing(client: AsyncClient, both: bool) -> None:
+    aanya = await finished(client, "Aanya", "woman", "men")
+    await finished(client, "Kabir", "man", "women")
+    item = await first_item(client, aanya)
+    body: dict[str, Any] = {}
+    if both:
+        body = {
+            "prompt_id": item["profile"]["prompts"][0]["id"],
+            "guess_card_id": item["profile"]["guess_cards"][0]["id"],
+        }
+
+    response = await client.post(f"/v1/drops/tonight/{item['id']}/like", json=body, headers=aanya)
+
+    assert response.status_code == 422
+
+
+async def test_a_like_says_how_many_of_my_cards_they_got_right(client: AsyncClient) -> None:
+    aanya = await finished(client, "Aanya", "woman", "men")
+    kabir = await finished(client, "Kabir", "man", "women")
+    item = await first_item(client, aanya)
+    cards = [g["id"] for g in item["profile"]["guess_cards"]]
+    for card_id, pick in zip(cards, [0, 1, 0], strict=True):  # true options are 0, 1, 2
+        await client.post(f"/v1/guesses/{card_id}", json={"pick": pick}, headers=aanya)
+
+    await like(client, aanya, item)
+
+    [received] = await likes(client, kabir)
+    assert (received["their_right_guesses"], received["my_cards_total"]) == (2, 3)

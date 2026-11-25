@@ -7,9 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.schemas import Me
 from src.matches import service as match_service
+from src.profiles import service as profile_service
 from src.safety import repository
 from src.safety.models import Report
-from src.safety.schemas import ReportOut, ReportRequest
+from src.safety.schemas import BlockedOut, ReportOut, ReportRequest
 
 
 async def block(session: AsyncSession, user: Me, match_id: uuid.UUID, now: datetime) -> None:
@@ -34,6 +35,15 @@ async def report(
         ),
     )
     await session.commit()
+
+
+async def my_blocks(session: AsyncSession, user: Me) -> list[BlockedOut]:
+    """People I blocked, latest first. Only ever shown to the blocker."""
+    blocks = await repository.blocks_by(session, user.id)
+    names = await profile_service.nicknames(session, [b.blocked_id for b in blocks])
+    return [
+        BlockedOut(id=b.id, nickname=names[b.blocked_id], blocked_at=b.created_at) for b in blocks
+    ]
 
 
 async def recent_reports(session: AsyncSession, limit: int = 100) -> list[ReportOut]:

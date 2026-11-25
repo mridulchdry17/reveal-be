@@ -25,3 +25,11 @@ class ReportOut(BaseModel):
     reporter_id: uuid.UUID | None
     reported_id: uuid.UUID | None
     created_at: datetime
+
+
+class BlockedOut(BaseModel):
+    """Someone I blocked."""
+
+    id: uuid.UUID
+    nickname: str
+    blocked_at: datetime

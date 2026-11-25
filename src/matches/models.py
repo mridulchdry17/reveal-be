@@ -8,10 +8,10 @@ from src.models import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class Like(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """One student liking one of another's prompts, with an optional comment.
+    """One student liking one of another's prompts or guess cards, with an optional comment.
 
-    The prompt is copied, not linked: people rewrite their prompts, and the like should
-    still say what it was about.
+    What was liked is copied, not linked: people rewrite their prompts and cards, and the
+    like should still say what it was about. For a guess card, `answer` is the true option.
     """
 
     # "like" is a reserved word in Postgres.
@@ -24,8 +24,12 @@ class Like(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     to_user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("user_account.id", ondelete="CASCADE"), index=True
     )
-    prompt_question: Mapped[str] = mapped_column(String(60))
-    prompt_answer: Mapped[str] = mapped_column(String(120))
+    # See LikedKind: a prompt, or a guess card the liker has guessed.
+    kind: Mapped[str] = mapped_column(String(10), server_default="prompt")
+    question: Mapped[str] = mapped_column(String(90))
+    answer: Mapped[str] = mapped_column(String(120))
+    # The guess card's kind (GuessKind); None for a prompt.
+    guess_kind: Mapped[str | None] = mapped_column(String(20))
     comment: Mapped[str | None] = mapped_column(String(140))
     status: Mapped[str] = mapped_column(String(10))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

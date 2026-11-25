@@ -10,7 +10,7 @@ from src.auth.schemas import Me
 from src.clock import now
 from src.database import get_session
 from src.safety import service
-from src.safety.schemas import ReportRequest
+from src.safety.schemas import BlockedOut, ReportRequest
 from src.schemas import ErrorResponse
 
 router = APIRouter(prefix="/matches", tags=["safety"])
@@ -46,3 +46,17 @@ async def report(
     match_id: uuid.UUID, body: ReportRequest, user: Student, session: Session, at: Now
 ) -> None:
     await service.report(session, user, match_id, body, at)
+
+
+blocks_router = APIRouter(prefix="/blocks", tags=["safety"])
+
+
+@blocks_router.get(
+    "",
+    response_model=list[BlockedOut],
+    status_code=status.HTTP_200_OK,
+    summary="People I blocked, latest first",
+    responses={k: v for k, v in _ERRORS.items() if k != 404},
+)
+async def my_blocks(user: Student, session: Session) -> list[BlockedOut]:
+    return await service.my_blocks(session, user)

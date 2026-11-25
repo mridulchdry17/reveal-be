@@ -334,3 +334,17 @@ async def test_guess_pieces_close_when_the_match_ends(client: AsyncClient) -> No
     await client.post(f"/v1/matches/{match_id}/unmatch", headers=kabir)
 
     assert (await client.get(f"/v1/chats/{match_id}/photo", headers=aanya)).status_code == 404
+
+
+async def test_my_cards_count_who_guessed_and_who_got_it_right(client: AsyncClient) -> None:
+    aanya, kabir, item = await in_drop(client)
+    meera = await finished(client, "Meera", "woman", "men")
+    [meeras_item] = (await drop(client, meera))["items"]
+    first = card_ids(item["profile"])[0]
+    assert card_ids(meeras_item["profile"])[0] == first
+
+    await guess(client, aanya, first, RIGHT[0])
+    await guess(client, meera, first, RIGHT[0] + 1)
+
+    mine = (await client.get("/v1/profile/me", headers=kabir)).json()["guess_cards"]
+    assert [(g["guessed_count"], g["right_count"]) for g in mine] == [(2, 1), (0, 0), (0, 0)]

@@ -18,6 +18,7 @@ from src.matches.router import matches_router
 from src.matches.router import router as likes_router
 from src.notifications.router import router as notifications_router
 from src.profiles.router import router as profiles_router
+from src.safety.router import blocks_router
 from src.safety.router import router as safety_router
 from src.swaps.router import router as swaps_router
 from src.verification.router import router as verification_router
@@ -61,6 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(matches_router, prefix=API_V1)
     app.include_router(chats_router, prefix=API_V1)
     app.include_router(safety_router, prefix=API_V1)
+    app.include_router(blocks_router, prefix=API_V1)
     app.include_router(hides_router, prefix=API_V1)
     app.include_router(notifications_router, prefix=API_V1)
     app.include_router(swaps_router, prefix=API_V1)

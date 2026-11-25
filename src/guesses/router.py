@@ -10,7 +10,7 @@ from src.auth.schemas import Me
 from src.clock import now
 from src.database import get_session
 from src.guesses import service
-from src.guesses.schemas import GuessIn, GuessResult
+from src.guesses.schemas import GuessIn, GuessResult, HintResult
 from src.schemas import ErrorResponse
 
 router = APIRouter(prefix="/guesses", tags=["guesses"])
@@ -38,3 +38,21 @@ async def guess(
     card_id: uuid.UUID, body: GuessIn, user: Student, session: Session, at: Now
 ) -> GuessResult:
     return await service.guess(session, user, card_id, body.pick, at)
+
+
+@router.post(
+    "/{card_id}/hint",
+    response_model=HintResult,
+    status_code=status.HTTP_200_OK,
+    summary="Use tonight's hint: strike one wrong option off a card (one a night)",
+    responses={
+        **_ERRORS,
+        409: {
+            "model": ErrorResponse,
+            "description": "Already guessed (already_guessed), or tonight's hint is used on "
+            "another card (hint_already_used)",
+        },
+    },
+)
+async def hint(card_id: uuid.UUID, user: Student, session: Session, at: Now) -> HintResult:
+    return await service.hint(session, user, card_id, at)

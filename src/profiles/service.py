@@ -1,7 +1,7 @@
 import secrets
 import uuid
 from collections.abc import Collection, Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.exc import IntegrityError
@@ -16,6 +16,8 @@ from src.profiles import photo, repository, voice
 from src.profiles.exceptions import (
     AlreadyGuessed,
     GuessCardNotFound,
+    GuessCardNotGuessed,
+    HintAlreadyUsed,
     NotAPhoto,
     NotAVoiceNote,
     PhotoNotFound,
@@ -25,13 +27,14 @@ from src.profiles.exceptions import (
     VoiceNoteNotFound,
     VoiceNoteTooLarge,
 )
-from src.profiles.models import Guess, GuessCard, Profile, ProfilePrompt
+from src.profiles.models import Guess, GuessCard, GuessHint, Profile, ProfilePrompt
 from src.profiles.schemas import (
     BasicsUpdate,
     CardsUpdate,
     Contact,
     GuessCardOut,
     GuessCardsUpdate,
+    GuessedCard,
     MyGuessCard,
     MyProfile,
     Option,
@@ -64,12 +67,14 @@ def options() -> ProfileOptions:
 async def my_profile(session: AsyncSession, user: Me) -> MyProfile:
     profile = await repository.get_for_user(session, user.id)
     if profile is None:
-        return _to_mine(user, None, [], [])
+        return _to_mine(user, None, [], [], {})
+    guess_cards = await repository.guess_cards_for(session, [profile.id])
     return _to_mine(
         user,
         profile,
         await repository.prompts(session, profile.id),
-        await repository.guess_cards_for(session, [profile.id]),
+        guess_cards,
+        await repository.guess_stats(session, [g.id for g in guess_cards]),
     )
 
 
@@ -299,9 +304,12 @@ async def public_profiles(
     all_cards = await repository.guess_cards_for(session, profile_ids)
     for card in all_cards:
         cards.setdefault(card.profile_id, []).append(card)
-    picks = {
-        g.card_id: g
-        for g in await repository.guesses_by(session, viewer_id, [x.id for x in all_cards])
+    card_ids = [x.id for x in all_cards]
+    picks = {g.card_id: g for g in await repository.guesses_by(session, viewer_id, card_ids)}
+    struck = {
+        h.card_id: h.struck
+        for h in await repository.hints_by(session, viewer_id, card_ids)
+        if h.card_id is not None
     }
     viewer = await repository.get_for_user(session, viewer_id)
     viewer_has_photo = bool(viewer and viewer.photo_key)
@@ -311,7 +319,7 @@ async def public_profiles(
             names[p.user_id].name,
             prompts.get(p.id, []),
             (opened or {}).get(p.user_id, ()),
-            _guess_cards_out(cards.get(p.id, []), picks),
+            _guess_cards_out(cards.get(p.id, []), picks, struck),
             viewer_has_photo,
         )
         for p in profiles
@@ -372,12 +380,64 @@ async def record_guess(
     return card.answer
 
 
+async def use_hint(
+    session: AsyncSession, user_id: uuid.UUID, card_id: uuid.UUID, drop_date: date
+) -> int:
+    """Strike one wrong option off a card and return its index. Doesn't commit.
+
+    One hint per night (`drop_date`), and asking again for the same card gives the same
+    answer without using another. guesses.service calls this only after checking the user
+    may see the card's owner.
+    """
+    found = await repository.guess_card_with_owner(session, card_id)
+    if found is None:
+        raise GuessCardNotFound
+    card = found[0]
+    if (existing := await repository.hint_on(session, user_id, card_id)) is not None:
+        return existing.struck
+    if await repository.get_guess(session, user_id, card_id):
+        raise AlreadyGuessed("You've already guessed this one")
+    if await repository.hint_in(session, user_id, drop_date) is not None:
+        raise HintAlreadyUsed("You've used tonight's hint")
+    wrong = [i for i in range(len(card.options)) if i != card.answer]
+    hint = GuessHint(
+        user_id=user_id, card_id=card_id, drop_date=drop_date, struck=secrets.choice(wrong)
+    )
+    try:
+        async with session.begin_nested():
+            await repository.add_hint(session, hint)
+    except IntegrityError as error:  # two hints sent at the same moment
+        raced = await repository.hint_on(session, user_id, card_id)
+        if raced is not None:
+            return raced.struck
+        raise HintAlreadyUsed("You've used tonight's hint") from error
+    return hint.struck
+
+
+async def hint_used(session: AsyncSession, user_id: uuid.UUID, drop_date: date) -> bool:
+    """Whether this user has used the hint of this drop night."""
+    return await repository.hint_in(session, user_id, drop_date) is not None
+
+
 async def right_guesses(
     session: AsyncSession, viewer_id: uuid.UUID, owner_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, int]:
     """How many of each owner's current cards this viewer guessed right (0-3)."""
     counts = await repository.right_guess_counts(session, viewer_id, owner_ids)
     return {uid: counts.get(uid, 0) for uid in owner_ids}
+
+
+async def right_guesses_on(
+    session: AsyncSession, owner_id: uuid.UUID, guesser_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """How many of the owner's current cards each guesser got right (0-3)."""
+    counts = await repository.right_guess_counts_on(session, owner_id, guesser_ids)
+    return {uid: counts.get(uid, 0) for uid in guesser_ids}
+
+
+async def guess_card_count(session: AsyncSession, owner_id: uuid.UUID) -> int:
+    profile = await repository.get_for_user(session, owner_id)
+    return len(await repository.guess_cards_for(session, [profile.id])) if profile else 0
 
 
 async def blurred_photo(session: AsyncSession, viewer_id: uuid.UUID, owner_id: uuid.UUID) -> bytes:
@@ -424,6 +484,27 @@ async def prompt_of(session: AsyncSession, owner_id: uuid.UUID, prompt_id: uuid.
     return PromptOut(id=prompt.id, question=prompt.question, answer=prompt.answer)
 
 
+async def guessed_card_of(
+    session: AsyncSession, owner_id: uuid.UUID, card_id: uuid.UUID, guesser_id: uuid.UUID
+) -> GuessedCard:
+    """One of the owner's current guess cards, which this guesser has already guessed."""
+    found = await repository.guess_card_with_owner(session, card_id)
+    if found is None or found[1] != owner_id:
+        raise GuessCardNotFound
+    card = found[0]
+    if await repository.get_guess(session, guesser_id, card_id) is None:
+        raise GuessCardNotGuessed("Guess this card before liking it")
+    return GuessedCard(
+        kind=c.GuessKind(card.kind), question=card.question, answer=card.options[card.answer]
+    )
+
+
+async def nicknames(session: AsyncSession, user_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """Nicknames only, e.g. for my own block list. Missing profiles get an empty string."""
+    found = {p.user_id: p.nickname for p in await repository.get_for_users(session, user_ids)}
+    return {uid: found.get(uid) or "" for uid in user_ids}
+
+
 def first_name(full_name: str) -> str:
     """Card 1. The first word of the Google account name."""
     return full_name.split()[0] if full_name.strip() else ""
@@ -453,7 +534,8 @@ async def _get_or_create(session: AsyncSession, user: Me) -> Profile:
 async def _save(session: AsyncSession, user: Me, profile: Profile) -> MyProfile:
     prompts = await repository.prompts(session, profile.id)
     guess_cards = await repository.guess_cards_for(session, [profile.id])
-    mine = _to_mine(user, profile, prompts, guess_cards)
+    stats = await repository.guess_stats(session, [g.id for g in guess_cards])
+    mine = _to_mine(user, profile, prompts, guess_cards, stats)
     if mine.complete and profile.completed_at is None:
         profile.completed_at = datetime.now(UTC)
     await session.commit()
@@ -461,7 +543,11 @@ async def _save(session: AsyncSession, user: Me, profile: Profile) -> MyProfile:
 
 
 def _to_mine(
-    user: Me, profile: Profile | None, prompts: list[ProfilePrompt], guess_cards: list[GuessCard]
+    user: Me,
+    profile: Profile | None,
+    prompts: list[ProfilePrompt],
+    guess_cards: list[GuessCard],
+    stats: Mapping[uuid.UUID, tuple[int, int]],
 ) -> MyProfile:
     p = profile
     basics_done = bool(p and p.nickname and p.vibe and len(p.interests) >= c.MIN_INTERESTS)
@@ -482,6 +568,8 @@ def _to_mine(
                 question=g.question,
                 options=list(g.options),
                 answer=g.answer,
+                guessed_count=stats.get(g.id, (0, 0))[0],
+                right_count=stats.get(g.id, (0, 0))[1],
             )
             for g in guess_cards
         ],
@@ -509,9 +597,10 @@ def _to_mine(
 
 
 def _guess_cards_out(
-    cards: list[GuessCard], picks: Mapping[uuid.UUID, Guess]
+    cards: list[GuessCard], picks: Mapping[uuid.UUID, Guess], struck: Mapping[uuid.UUID, int]
 ) -> list[GuessCardOut]:
-    """Their cards for one viewer: the answer only on cards this viewer has guessed."""
+    """Their cards for one viewer: the answer only on cards this viewer has guessed, and the
+    option their hint struck off, if they used one there."""
     return [
         GuessCardOut(
             id=g.id,
@@ -520,6 +609,7 @@ def _guess_cards_out(
             options=list(g.options),
             picked=picks[g.id].picked if g.id in picks else None,
             answer=g.answer if g.id in picks else None,
+            struck=struck.get(g.id),
         )
         for g in cards
     ]

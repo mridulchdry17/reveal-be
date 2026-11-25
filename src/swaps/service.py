@@ -37,11 +37,12 @@ from src.swaps.constants import (
     PIECES_BEFORE_PHOTO_SWAP,
     SWAPPABLE,
     CardState,
+    SwapSide,
     SwapStatus,
 )
-from src.swaps.exceptions import NothingOpenYet, SwapNotAllowed, SwapNotFound
+from src.swaps.exceptions import NothingOpenYet, SwapNotAllowed, SwapNotFound, SwapNotYours
 from src.swaps.models import Swap
-from src.swaps.schemas import CardSwap, SwapBoard
+from src.swaps.schemas import CardSwap, PendingSwap, SwapBoard, SwapSummary
 
 
 @dataclass
@@ -53,6 +54,7 @@ class _Pair:
     theirs: OwnedCards
     right_guesses: int = 0  # mine, on their guess cards
     accepted: set[Card] = field(default_factory=set)
+    opened: dict[Card, Swap] = field(default_factory=dict)  # the accepted rows
     pending: dict[Card, Swap] = field(default_factory=dict)
 
 
@@ -70,6 +72,16 @@ async def opened_cards(
 
 async def board(session: AsyncSession, viewer_id: uuid.UUID, match: MatchInfo) -> SwapBoard:
     return _board(await _pair(session, viewer_id, match))
+
+
+async def summaries(
+    session: AsyncSession, viewer_id: uuid.UUID, matches: Sequence[MatchInfo]
+) -> dict[uuid.UUID, SwapSummary]:
+    """Open photo pieces and the latest waiting request per match, keyed by match id."""
+    return {
+        match_id: SwapSummary(photo_pieces=len(_pieces(pair)), pending_swap=_latest_pending(pair))
+        for match_id, pair in (await _pairs(session, viewer_id, matches)).items()
+    }
 
 
 async def propose(
@@ -131,6 +143,25 @@ async def decline(
     return await board(session, user.id, match)
 
 
+async def withdraw(
+    session: AsyncSession, user: Me, match_id: uuid.UUID, card: Card, now: datetime
+) -> SwapBoard:
+    """Take back my request while they haven't answered. Nothing opens; nobody is told."""
+    match = await match_service.live_match(session, user.id, match_id)
+    await repository.lock_match(session, match.id)
+    pair = await _pair(session, user.id, match)
+    state = _state(pair, card)
+    if state == CardState.THEY_ASKED:
+        raise SwapNotYours("They asked for this one: swap or say not yet")
+    if state != CardState.YOU_ASKED:
+        raise SwapNotFound("You haven't asked to swap that card")
+    swap = pair.pending[card]
+    swap.status = SwapStatus.WITHDRAWN
+    swap.decided_at = now
+    await session.commit()
+    return await board(session, user.id, match)
+
+
 async def their_photo(session: AsyncSession, user: Me, match_id: uuid.UUID) -> bytes:
     """Their photo with only the open pieces visible, marked for this viewer."""
     match = await match_service.live_match(session, user.id, match_id)
@@ -171,20 +202,33 @@ def _accept(swap: Swap, now: datetime) -> None:
 
 
 async def _pair(session: AsyncSession, viewer_id: uuid.UUID, match: MatchInfo) -> _Pair:
-    owned = await profile_service.owned_cards(session, [viewer_id, match.other_user_id])
-    right = await profile_service.right_guesses(session, viewer_id, [match.other_user_id])
-    pair = _Pair(
-        viewer_id=viewer_id,
-        mine=owned[viewer_id],
-        theirs=owned[match.other_user_id],
-        right_guesses=right[match.other_user_id],
-    )
-    for s in await repository.open_swaps(session, [match.id]):
+    return (await _pairs(session, viewer_id, [match]))[match.id]
+
+
+async def _pairs(
+    session: AsyncSession, viewer_id: uuid.UUID, matches: Sequence[MatchInfo]
+) -> dict[uuid.UUID, _Pair]:
+    """The pair for each of these matches, keyed by match id, in a fixed number of queries."""
+    others = [m.other_user_id for m in matches]
+    owned = await profile_service.owned_cards(session, [viewer_id, *others])
+    right = await profile_service.right_guesses(session, viewer_id, others)
+    pairs = {
+        m.id: _Pair(
+            viewer_id=viewer_id,
+            mine=owned[viewer_id],
+            theirs=owned[m.other_user_id],
+            right_guesses=right[m.other_user_id],
+        )
+        for m in matches
+    }
+    for s in await repository.open_swaps(session, list(pairs)) if pairs else []:
+        pair = pairs[s.match_id]
         if s.status == SwapStatus.ACCEPTED:
             pair.accepted.add(Card(s.card))
+            pair.opened[Card(s.card)] = s
         else:
             pair.pending[Card(s.card)] = s
-    return pair
+    return pairs
 
 
 def _blocked(pair: _Pair, card: Card) -> CardState | None:
@@ -214,11 +258,28 @@ def _state(pair: _Pair, card: Card) -> CardState:
 def _board(pair: _Pair) -> SwapBoard:
     voice_for_both = pair.mine.voice and pair.theirs.voice
     cards = [
-        CardSwap(card=card, state=_state(pair, card))
+        CardSwap(card=card, state=_state(pair, card), **_timing(pair, card))
         for card in SWAPPABLE
         if card != Card.VOICE or voice_for_both or Card.VOICE in pair.accepted
     ]
     return SwapBoard(cards=cards, photo_pieces=_pieces(pair))
+
+
+def _timing(pair: _Pair, card: Card) -> dict[str, datetime | None]:
+    """When the open request was made and, if it was accepted, when the card opened."""
+    swap = pair.opened.get(card) or pair.pending.get(card)
+    return {
+        "asked_at": swap.created_at if swap else None,
+        "decided_at": swap.decided_at if swap and card in pair.opened else None,
+    }
+
+
+def _latest_pending(pair: _Pair) -> PendingSwap | None:
+    if not pair.pending:
+        return None
+    swap = max(pair.pending.values(), key=lambda s: s.created_at)
+    by = SwapSide.ME if swap.proposed_by_id == pair.viewer_id else SwapSide.THEM
+    return PendingSwap(card=Card(swap.card), by=by)
 
 
 def _pieces(pair: _Pair) -> list[int]:

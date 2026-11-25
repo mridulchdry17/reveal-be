@@ -19,6 +19,8 @@ from src.drops.models import DropItem
 from src.drops.schemas import DropItemOut, LikeRequest, LikeResult, Tonight
 from src.hides import service as hide_service
 from src.matches import service as match_service
+from src.matches.constants import LikedKind
+from src.matches.schemas import Liked
 from src.notifications import service as notification_service
 from src.notifications.constants import DROP_ALERT_UNTIL_HOUR
 from src.profiles import service as profile_service
@@ -57,6 +59,7 @@ async def tonight(session: AsyncSession, user: Me, now: datetime) -> Tonight:
     return Tonight(
         drop_date=drop_date,
         next_drop_at=next_drop_at(now),
+        hint_used=await profile_service.hint_used(session, user.id, drop_date),
         items=[
             DropItemOut(
                 id=i.id,
@@ -74,14 +77,29 @@ async def like(
     session: AsyncSession, user: Me, item_id: uuid.UUID, body: LikeRequest, now: datetime
 ) -> LikeResult:
     item = await _open_item(session, user, item_id, now)
-    prompt = await profile_service.prompt_of(session, item.shown_user_id, body.prompt_id)
-    matched = await match_service.send_like(
-        session, user.id, item.shown_user_id, prompt, body.comment, now
+    liked = await _liked(session, user.id, item.shown_user_id, body)
+    match_id = await match_service.send_like(
+        session, user.id, item.shown_user_id, liked, body.comment, now
     )
     item.decision = Decision.LIKED
     item.decided_at = now
     await session.commit()
-    return LikeResult(matched=matched)
+    return LikeResult(matched=match_id is not None, match_id=match_id)
+
+
+async def _liked(
+    session: AsyncSession, user_id: uuid.UUID, owner_id: uuid.UUID, body: LikeRequest
+) -> Liked:
+    if body.guess_card_id is not None:
+        card = await profile_service.guessed_card_of(session, owner_id, body.guess_card_id, user_id)
+        return Liked(
+            kind=LikedKind.GUESS, question=card.question, answer=card.answer, guess_kind=card.kind
+        )
+    assert body.prompt_id is not None  # LikeRequest allows exactly one
+    prompt = await profile_service.prompt_of(session, owner_id, body.prompt_id)
+    return Liked(
+        kind=LikedKind.PROMPT, question=prompt.question, answer=prompt.answer, guess_kind=None
+    )
 
 
 async def pass_on(session: AsyncSession, user: Me, item_id: uuid.UUID, now: datetime) -> None:
