@@ -1,7 +1,7 @@
 import secrets
 import uuid
 from collections.abc import Collection, Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.exc import IntegrityError
@@ -17,6 +17,7 @@ from src.profiles.exceptions import (
     AlreadyGuessed,
     GuessCardNotFound,
     GuessCardNotGuessed,
+    HintAlreadyUsed,
     NotAPhoto,
     NotAVoiceNote,
     PhotoNotFound,
@@ -26,7 +27,7 @@ from src.profiles.exceptions import (
     VoiceNoteNotFound,
     VoiceNoteTooLarge,
 )
-from src.profiles.models import Guess, GuessCard, Profile, ProfilePrompt
+from src.profiles.models import Guess, GuessCard, GuessHint, Profile, ProfilePrompt
 from src.profiles.schemas import (
     BasicsUpdate,
     CardsUpdate,
@@ -303,9 +304,12 @@ async def public_profiles(
     all_cards = await repository.guess_cards_for(session, profile_ids)
     for card in all_cards:
         cards.setdefault(card.profile_id, []).append(card)
-    picks = {
-        g.card_id: g
-        for g in await repository.guesses_by(session, viewer_id, [x.id for x in all_cards])
+    card_ids = [x.id for x in all_cards]
+    picks = {g.card_id: g for g in await repository.guesses_by(session, viewer_id, card_ids)}
+    struck = {
+        h.card_id: h.struck
+        for h in await repository.hints_by(session, viewer_id, card_ids)
+        if h.card_id is not None
     }
     viewer = await repository.get_for_user(session, viewer_id)
     viewer_has_photo = bool(viewer and viewer.photo_key)
@@ -315,7 +319,7 @@ async def public_profiles(
             names[p.user_id].name,
             prompts.get(p.id, []),
             (opened or {}).get(p.user_id, ()),
-            _guess_cards_out(cards.get(p.id, []), picks),
+            _guess_cards_out(cards.get(p.id, []), picks, struck),
             viewer_has_photo,
         )
         for p in profiles
@@ -374,6 +378,45 @@ async def record_guess(
     except IntegrityError as error:  # the same guess sent twice at once
         raise AlreadyGuessed("You've already guessed this one") from error
     return card.answer
+
+
+async def use_hint(
+    session: AsyncSession, user_id: uuid.UUID, card_id: uuid.UUID, drop_date: date
+) -> int:
+    """Strike one wrong option off a card and return its index. Doesn't commit.
+
+    One hint per night (`drop_date`), and asking again for the same card gives the same
+    answer without using another. guesses.service calls this only after checking the user
+    may see the card's owner.
+    """
+    found = await repository.guess_card_with_owner(session, card_id)
+    if found is None:
+        raise GuessCardNotFound
+    card = found[0]
+    if (existing := await repository.hint_on(session, user_id, card_id)) is not None:
+        return existing.struck
+    if await repository.get_guess(session, user_id, card_id):
+        raise AlreadyGuessed("You've already guessed this one")
+    if await repository.hint_in(session, user_id, drop_date) is not None:
+        raise HintAlreadyUsed("You've used tonight's hint")
+    wrong = [i for i in range(len(card.options)) if i != card.answer]
+    hint = GuessHint(
+        user_id=user_id, card_id=card_id, drop_date=drop_date, struck=secrets.choice(wrong)
+    )
+    try:
+        async with session.begin_nested():
+            await repository.add_hint(session, hint)
+    except IntegrityError as error:  # two hints sent at the same moment
+        raced = await repository.hint_on(session, user_id, card_id)
+        if raced is not None:
+            return raced.struck
+        raise HintAlreadyUsed("You've used tonight's hint") from error
+    return hint.struck
+
+
+async def hint_used(session: AsyncSession, user_id: uuid.UUID, drop_date: date) -> bool:
+    """Whether this user has used the hint of this drop night."""
+    return await repository.hint_in(session, user_id, drop_date) is not None
 
 
 async def right_guesses(
@@ -548,9 +591,10 @@ def _to_mine(
 
 
 def _guess_cards_out(
-    cards: list[GuessCard], picks: Mapping[uuid.UUID, Guess]
+    cards: list[GuessCard], picks: Mapping[uuid.UUID, Guess], struck: Mapping[uuid.UUID, int]
 ) -> list[GuessCardOut]:
-    """Their cards for one viewer: the answer only on cards this viewer has guessed."""
+    """Their cards for one viewer: the answer only on cards this viewer has guessed, and the
+    option their hint struck off, if they used one there."""
     return [
         GuessCardOut(
             id=g.id,
@@ -559,6 +603,7 @@ def _guess_cards_out(
             options=list(g.options),
             picked=picks[g.id].picked if g.id in picks else None,
             answer=g.answer if g.id in picks else None,
+            struck=struck.get(g.id),
         )
         for g in cards
     ]

@@ -218,6 +218,9 @@ class GuessCardOut(BaseModel):
     options: list[str]
     picked: int | None = Field(description="My guess, or null if I haven't guessed yet")
     answer: int | None = Field(description="The true option; null until I've guessed")
+    struck: int | None = Field(
+        description="A wrong option my hint struck off this card, or null if I used no hint here"
+    )
 
 
 class PublicProfile(BaseModel):

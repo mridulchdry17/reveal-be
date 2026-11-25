@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, SmallInteger, String, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, SmallInteger, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -87,3 +87,25 @@ class Guess(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     picked: Mapped[int] = mapped_column(SmallInteger)
     correct: Mapped[bool] = mapped_column(Boolean)
+
+
+class GuessHint(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A hint: one wrong option struck off someone's guess card. One per viewer per night.
+
+    If the card is changed (a new row), the hint stays to count against its night.
+    """
+
+    __tablename__ = "guess_hint"
+    __table_args__ = (
+        UniqueConstraint("user_id", "drop_date"),  # one hint a night
+        UniqueConstraint("card_id", "user_id"),  # one hint per card, ever
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_account.id", ondelete="CASCADE"))
+    card_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("guess_card.id", ondelete="SET NULL")
+    )
+    # The drop night (college-time date it opened) the hint was used in.
+    drop_date: Mapped[date] = mapped_column(Date)
+    # Index of the wrong option struck off.
+    struck: Mapped[int] = mapped_column(SmallInteger)

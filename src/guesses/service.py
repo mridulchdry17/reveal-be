@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.schemas import Me
 from src.drops import service as drop_service
-from src.guesses.schemas import GuessResult
+from src.guesses.schemas import GuessResult, HintResult
 from src.matches import service as match_service
 from src.profiles import service as profile_service
 from src.profiles.exceptions import GuessCardNotFound
@@ -32,6 +32,22 @@ async def guess(
     answer = await profile_service.record_guess(session, user.id, card_id, pick)
     await session.commit()
     return GuessResult(correct=pick == answer, answer=answer, picked=pick)
+
+
+async def hint(session: AsyncSession, user: Me, card_id: uuid.UUID, now: datetime) -> HintResult:
+    """Strike one wrong option off a card I may guess and haven't yet. One a drop night."""
+    owner_id = await profile_service.guess_card_owner(session, card_id)
+    if (
+        owner_id is None
+        or owner_id == user.id
+        or not await _can_see(session, user.id, owner_id, now)
+    ):
+        raise GuessCardNotFound
+    struck = await profile_service.use_hint(
+        session, user.id, card_id, drop_service.drop_date_for(now)
+    )
+    await session.commit()
+    return HintResult(card_id=card_id, struck=struck)
 
 
 async def _can_see(

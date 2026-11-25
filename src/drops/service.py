@@ -59,6 +59,7 @@ async def tonight(session: AsyncSession, user: Me, now: datetime) -> Tonight:
     return Tonight(
         drop_date=drop_date,
         next_drop_at=next_drop_at(now),
+        hint_used=await profile_service.hint_used(session, user.id, drop_date),
         items=[
             DropItemOut(
                 id=i.id,

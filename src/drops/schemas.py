@@ -17,6 +17,7 @@ class DropItemOut(BaseModel):
 class Tonight(BaseModel):
     drop_date: date = Field(description="College-time date this drop opened, at 9 PM")
     next_drop_at: datetime
+    hint_used: bool = Field(description="I've used tonight's guess-card hint")
     items: list[DropItemOut]
 
 

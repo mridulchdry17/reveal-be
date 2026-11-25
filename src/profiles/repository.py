@@ -1,13 +1,14 @@
 import uuid
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
+from datetime import date
 
 from sqlalchemy import Integer, and_, case, delete, exists, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from src.identity import fingerprint_sql
-from src.profiles.models import Guess, GuessCard, Profile, ProfilePrompt
+from src.profiles.models import Guess, GuessCard, GuessHint, Profile, ProfilePrompt
 
 # Finished once (completed_at) and has guess cards: profiles finished before guess cards
 # existed count as unfinished until their owner adds them.
@@ -225,4 +226,32 @@ async def add_guess(session: AsyncSession, guess: Guess) -> None:
 
 async def add(session: AsyncSession, row: Profile) -> None:
     session.add(row)
+    await session.flush()
+
+
+async def hint_on(
+    session: AsyncSession, user_id: uuid.UUID, card_id: uuid.UUID
+) -> GuessHint | None:
+    return await session.scalar(
+        select(GuessHint).where(GuessHint.user_id == user_id, GuessHint.card_id == card_id)
+    )
+
+
+async def hint_in(session: AsyncSession, user_id: uuid.UUID, drop_date: date) -> GuessHint | None:
+    return await session.scalar(
+        select(GuessHint).where(GuessHint.user_id == user_id, GuessHint.drop_date == drop_date)
+    )
+
+
+async def hints_by(
+    session: AsyncSession, user_id: uuid.UUID, card_ids: Sequence[uuid.UUID]
+) -> list[GuessHint]:
+    rows = await session.scalars(
+        select(GuessHint).where(GuessHint.user_id == user_id, GuessHint.card_id.in_(card_ids))
+    )
+    return list(rows)
+
+
+async def add_hint(session: AsyncSession, hint: GuessHint) -> None:
+    session.add(hint)
     await session.flush()

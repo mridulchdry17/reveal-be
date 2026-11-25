@@ -49,6 +49,12 @@ class GuessCardNotGuessed(Conflict):
     code = "guess_card_not_guessed"
 
 
+class HintAlreadyUsed(Conflict):
+    """One hint a night, on one card."""
+
+    code = "hint_already_used"
+
+
 class AlreadyGuessed(Conflict):
     """One try per card."""
 
